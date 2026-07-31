@@ -1,5 +1,5 @@
 import { useSettingsStore } from './stores/useSettingsStore';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSnackbar } from 'notistack';
 
@@ -16,11 +16,15 @@ import NodeList from "./components/NodeList";
 import { useNodesStore } from './stores/useNodeStore';
 import { useWebsocketStore } from './stores/useWebsocketStore.ts';
 import GraphList from './components/GraphList.tsx';
+import CodeWorkspace from './components/CodeWorkspace.tsx';
+
+export type WorkspaceMode = 'graph' | 'code';
 
 const TAB_BAR_WIDTH = 54;
 const WORKSPACE_MIN_WIDTH = 240
 
 export default function App() {
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('graph');
   const {
     isLeftPanelOpen,
     isRightPanelOpen,
@@ -123,7 +127,7 @@ export default function App() {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
         {/* Top Navigation Bar */}
         <Box sx={{ flex: 'none', backgroundColor: '#2a2a2a', color: 'white', height: '58px' }}>
-          <TopBar />
+          <TopBar workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} />
         </Box>
 
         {/* Main Content Area */}
@@ -201,7 +205,7 @@ export default function App() {
 
           {/* Main Content */}
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
-            <Workflow />
+            {workspaceMode === 'graph' ? <Workflow /> : <CodeWorkspace />}
           </Box>
 
           {/* Right Panel */}

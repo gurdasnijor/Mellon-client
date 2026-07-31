@@ -49,7 +49,12 @@ const executeOptions = [
   },  
 ]
 
-function TopBar() {
+type TopBarProps = {
+  workspaceMode: 'graph' | 'code';
+  onWorkspaceModeChange: (mode: 'graph' | 'code') => void;
+};
+
+function TopBar({ workspaceMode, onWorkspaceModeChange }: TopBarProps) {
   const executeGroupRef = useRef<HTMLDivElement>(null);
   const [executeButtonOpen, setExecuteButtonOpen] = useState(false);
   const { isRightPanelOpen, setRightPanelOpen, executeButtonIndex, setExecuteButtonIndex, setModelManagerOpener, setSettingsOpener, setRunningState, runningState } = useSettingsStore();
@@ -205,9 +210,25 @@ function TopBar() {
         >
           API Graph
         </Button>
+        <ButtonGroup size="small" sx={{ ml: 2 }}>
+          <Button
+            variant={workspaceMode === 'graph' ? 'contained' : 'outlined'}
+            onClick={() => onWorkspaceModeChange('graph')}
+          >
+            Graph
+          </Button>
+          <Button
+            variant={workspaceMode === 'code' ? 'contained' : 'outlined'}
+            onClick={() => onWorkspaceModeChange('code')}
+          >
+            Code
+          </Button>
+        </ButtonGroup>
       </Box>
       {/* Actions */}
       <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
+        {workspaceMode === 'graph' && (
+          <>
         <ButtonGroup variant="contained" ref={executeGroupRef} sx={{ '& .MuiButtonGroup-lastButton': { minWidth: '0px' } }}>
           <Button
             variant="contained"
@@ -262,6 +283,8 @@ function TopBar() {
         >
           <StopIcon />
         </Button>
+          </>
+        )}
 
         <Box sx={{ position: 'relative', display: 'inline-flex' }}>
           <CircularProgress color="success" variant="determinate" value={currentTask?.progress ?? 0} size={38} thickness={4} sx={{ borderRadius: '50%', boxShadow: 'inset 0 0 0 4px rgba(255, 255, 255, 0.12)', '& .MuiCircularProgress-circle': { transition: '60ms' } }} />
