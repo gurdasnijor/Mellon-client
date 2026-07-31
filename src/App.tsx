@@ -1,5 +1,5 @@
 import { useSettingsStore } from './stores/useSettingsStore';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSnackbar } from 'notistack';
 
@@ -16,10 +16,10 @@ import NodeList from "./components/NodeList";
 import { useNodesStore } from './stores/useNodeStore';
 import { useWebsocketStore } from './stores/useWebsocketStore.ts';
 import GraphList from './components/GraphList.tsx';
-import CodeWorkspace from './components/CodeWorkspace.tsx';
 
 export type WorkspaceMode = 'graph' | 'code';
 
+const CodeWorkspace = lazy(() => import('./components/CodeWorkspace.tsx'));
 const TAB_BAR_WIDTH = 54;
 const WORKSPACE_MIN_WIDTH = 240
 
@@ -205,7 +205,13 @@ export default function App() {
 
           {/* Main Content */}
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
-            {workspaceMode === 'graph' ? <Workflow /> : <CodeWorkspace />}
+            {workspaceMode === 'graph' ? (
+              <Workflow />
+            ) : (
+              <Suspense fallback={<Box sx={{ height: '100%', bgcolor: 'background.default' }} />}>
+                <CodeWorkspace />
+              </Suspense>
+            )}
           </Box>
 
           {/* Right Panel */}
