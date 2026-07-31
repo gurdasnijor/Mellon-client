@@ -1,52 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
+import CodeMirror from '@uiw/react-codemirror';
+import { python } from '@codemirror/lang-python';
+import { oneDark } from '@codemirror/theme-one-dark';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import FormControl from '@mui/material/FormControl';
+import Link from '@mui/material/Link';
+import MenuItem from '@mui/material/MenuItem';
+import Select, { SelectChangeEvent } from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 
 import config from '../../app.config';
+import {
+  CODE_TEMPLATES,
+  DEFAULT_CODE_TEMPLATE,
+} from '../codeTemplates';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 
 const STORAGE_KEY = 'mellon-code-workspace-source';
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
-
-const WAYPOINT_EXAMPLE = `import torch
-from diffusers.modular_pipelines import ModularPipeline
-from diffusers.utils import load_image, export_to_video
-
-pipe = ModularPipeline.from_pretrained(
-    "Overworld/Waypoint-1.5-1B", trust_remote_code=True
-)
-pipe.load_components(
-    device_map="cuda", torch_dtype=torch.bfloat16, trust_remote_code=True
-)
-pipe.transformer.apply_inference_patches()
-pipe.transformer.compile(fullgraph=True, mode="max-autotune", dynamic=False)
-
-image = load_image(
-    "https://huggingface.co/spaces/Overworld/waypoint-1-small/resolve/main/starter_18.png"
-).resize((1024, 512))
-state = pipe(
-    image=image,
-    prompt="An explorable world",
-    button=set(),
-    mouse=(0.0, 0.0),
-    output_type="pil",
-)
-
-state.values["image"] = None
-frames = []
-for _ in range(150):
-    state = pipe(
-        state,
-        button={87},
-        mouse=(0.0, 0.0),
-        output_type="pil",
-    )
-    frames.extend(state.values["images"])
-
-export_to_video(frames, "waypoint-v1-5.mp4", fps=60)
-`;
+const PYTHON_EXTENSIONS = [python()];
 
 type Artifact = {
   path: string;
@@ -67,7 +41,10 @@ type CodeRun = {
 export default function CodeWorkspace() {
   const sid = useWebsocketStore(state => state.sid);
   const [code, setCode] = useState(
-    () => localStorage.getItem(STORAGE_KEY) || WAYPOINT_EXAMPLE,
+    () => localStorage.getItem(STORAGE_KEY) || DEFAULT_CODE_TEMPLATE.code,
+  );
+  const [templateId, setTemplateId] = useState(
+    () => CODE_TEMPLATES.find(template => template.code === code)?.id || '',
   );
   const [run, setRun] = useState<CodeRun | null>(null);
   const [error, setError] = useState('');
@@ -113,7 +90,10 @@ export default function CodeWorkspace() {
     };
   }, [runId, runStatus]);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
+    if (submitting || (run && !TERMINAL_STATUSES.has(run.status))) {
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -132,6 +112,40 @@ export default function CodeWorkspace() {
     } finally {
       setSubmitting(false);
     }
+  }, [code, run, sid, submitting]);
+
+  useEffect(() => {
+    const handleRunShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key === 'Enter'
+        && (event.metaKey || event.ctrlKey)
+        && !event.repeat
+      ) {
+        event.preventDefault();
+        void submit();
+      }
+    };
+
+    window.addEventListener('keydown', handleRunShortcut);
+    return () => window.removeEventListener('keydown', handleRunShortcut);
+  }, [submit]);
+
+  const loadTemplate = (event: SelectChangeEvent) => {
+    const nextTemplate = CODE_TEMPLATES.find(
+      template => template.id === event.target.value,
+    );
+    if (!nextTemplate) return;
+    setTemplateId(nextTemplate.id);
+    setCode(nextTemplate.code);
+    setError('');
+    setRun(null);
+  };
+
+  const updateCode = (nextCode: string) => {
+    setCode(nextCode);
+    setTemplateId(
+      CODE_TEMPLATES.find(template => template.code === nextCode)?.id || '',
+    );
   };
 
   const cancel = async () => {
@@ -153,12 +167,32 @@ export default function CodeWorkspace() {
   };
 
   const isActive = run && !TERMINAL_STATUSES.has(run.status);
+  const selectedTemplate = CODE_TEMPLATES.find(
+    template => template.id === templateId,
+  );
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2, gap: 1.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <FormControl size="small" sx={{ minWidth: 250 }}>
+          <Select
+            aria-label="Code template"
+            value={templateId}
+            onChange={loadTemplate}
+            disabled={Boolean(isActive)}
+          >
+            <MenuItem value="" disabled>
+              Custom code
+            </MenuItem>
+            {CODE_TEMPLATES.map(template => (
+              <MenuItem key={template.id} value={template.id}>
+                {template.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <Button variant="contained" onClick={submit} disabled={submitting || Boolean(isActive)}>
-          {submitting ? 'Submitting…' : 'Run Python'}
+          {submitting ? 'Submitting…' : 'Run Python ⌘↵'}
         </Button>
         <Button variant="outlined" onClick={cancel} disabled={!isActive}>
           Stop
@@ -170,31 +204,55 @@ export default function CodeWorkspace() {
             {run.exit_code !== null ? ` · exit ${run.exit_code}` : ''}
           </Typography>
         )}
+        {selectedTemplate && (
+          <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+            {selectedTemplate.description}{' '}
+            <Link href={selectedTemplate.sourceUrl} target="_blank" rel="noreferrer">
+              Model card
+            </Link>
+          </Typography>
+        )}
       </Box>
 
       {error && <Typography color="error">{error}</Typography>}
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(320px, 2fr)', gap: 1.5 }}>
         <Box
-          component="textarea"
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          spellCheck={false}
+          aria-label="Python code editor"
           sx={{
-            width: '100%',
-            height: '100%',
-            resize: 'none',
+            minHeight: 0,
+            overflow: 'hidden',
             border: '1px solid #444',
             borderRadius: 1,
-            bgcolor: '#111',
-            color: '#ddd',
-            p: 1.5,
-            fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 13,
-            lineHeight: 1.5,
-            outline: 'none',
+            bgcolor: '#282c34',
+            '& .cm-editor': {
+              height: '100%',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: 13,
+            },
+            '& .cm-scroller': {
+              overflow: 'auto',
+            },
           }}
-        />
+        >
+          <CodeMirror
+            value={code}
+            height="100%"
+            theme={oneDark}
+            extensions={PYTHON_EXTENSIONS}
+            onChange={updateCode}
+            basicSetup={{
+              autocompletion: true,
+              bracketMatching: true,
+              closeBrackets: true,
+              foldGutter: true,
+              highlightActiveLine: true,
+              highlightActiveLineGutter: true,
+              indentOnInput: true,
+              lineNumbers: true,
+            }}
+          />
+        </Box>
 
         <Box sx={{ minHeight: 0, overflow: 'auto', bgcolor: '#111', border: '1px solid #444', borderRadius: 1, p: 1.5 }}>
           <Typography variant="subtitle2">stdout</Typography>
