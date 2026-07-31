@@ -12,6 +12,7 @@ import {
   Viewport,
   useUpdateNodeInternals,
   ConnectionLineType,
+  OnNodeDrag,
 } from '@xyflow/react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCallback, useRef, useState } from 'react';
@@ -118,7 +119,7 @@ function Workflow() {
   }, [nodes, edges]);
 
   // Handle node drag start
-  const handleNodeDragStart = useCallback((event: React.MouseEvent, node: CustomNodeType) => {
+  const handleNodeDragStart = useCallback<OnNodeDrag<CustomNodeType>>((event, node) => {
     const isAltPressed = event.altKey;
     
     if (isAltPressed) {
@@ -143,7 +144,7 @@ function Workflow() {
   }, [findConnectedNodes, nodes]);
 
   // Handle node drag
-  const handleNodeDrag = useCallback((_event: React.MouseEvent, node: CustomNodeType) => {
+  const handleNodeDrag = useCallback<OnNodeDrag<CustomNodeType>>((_event, node) => {
     if (isAltDragging && draggedNodeId && connectedNodeIds.has(node.id) && dragStartPosition) {
       // Calculate the delta from the start position
       const deltaX = node.position.x - dragStartPosition.x;
@@ -181,7 +182,7 @@ function Workflow() {
   }, [isAltDragging, draggedNodeId, connectedNodeIds, dragStartPosition, initialPositions, nodes, onNodesChange]);
 
   // Handle node drag stop
-  const handleNodeDragStop = useCallback((_event: React.MouseEvent, _node: CustomNodeType) => {
+  const handleNodeDragStop = useCallback<OnNodeDrag<CustomNodeType>>((_event, _node) => {
     if (isAltDragging) {
       setIsAltDragging(false);
       setDraggedNodeId(null);

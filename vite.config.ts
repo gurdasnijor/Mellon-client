@@ -2,6 +2,7 @@ import { defineConfig, mergeConfig, UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'node:url'
 
 const baseConfig: UserConfig = {
   plugins: [react()],
@@ -50,7 +51,7 @@ const loadLocalConfig = async () => {
   const localConfigPath = path.resolve(__dirname, 'vite.config.local.ts')
 
   if (fs.existsSync(localConfigPath)) {
-    return (await import('./vite.config.local.ts')).default
+    return (await import(pathToFileURL(localConfigPath).href)).default
   }
   return {}
 }
