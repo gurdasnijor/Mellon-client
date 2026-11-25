@@ -17,6 +17,7 @@ export type NodeData = {
     progress?: number;
     minimized?: boolean;
     headerColor?: string;
+    collapsed?: boolean; // ours: a group folded to a card
 }
 
 export type NodeParams = {

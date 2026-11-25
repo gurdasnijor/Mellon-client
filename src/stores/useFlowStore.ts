@@ -49,8 +49,9 @@ export type FlowStore = {
     updateHandleConnectionStatus: () => void;
     updateSignalValues: (edges: Edge | Edge[]) => void;
     getSignalValue: (id: string, param: string) => any;
-    groupNodes: (ids: string[]) => void;
+    groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => string | null;
     ungroupNodes: (id: string) => void;
+    setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => void;
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => void;
     updateCacheStatus: (ids: string | string[]) => void;
@@ -448,58 +449,69 @@ export const useFlowStore = create<FlowStore>()(
                 return { edges: updatedEdges };
             });
         },
-        groupNodes: (ids: string[]) => {
-            set((state) => {
-                const nodes = state.nodes.filter(n => ids.includes(n.id));
-                if (nodes.length === 0) return state;
+        // ours: a group of nodes not in one (no groups in groups), framed around what they draw (`sizes`, from the
+        // canvas, since a node's preview can draw past its measured box), and its members back where they were when
+        // it's ungrouped
+        groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => {
+            const nodes = get().nodes.filter(n => ids.includes(n.id) && n.data.type !== 'group' && !n.parentId);
+            if (nodes.length === 0) return null;
+            const size = (n: CustomNodeType) => sizes?.[n.id] ?? { width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 };
+            const pad = 20, header = 48;
 
-                const minX = Math.min(...nodes.map(n => n.position.x));
-                const minY = Math.min(...nodes.map(n => n.position.y));
-                const maxX = Math.max(...nodes.map(n => n.position.x + (n.measured?.width ?? 0)));
-                const maxY = Math.max(...nodes.map(n => n.position.y + (n.measured?.height ?? 0)));
+            const minX = Math.min(...nodes.map(n => n.position.x));
+            const minY = Math.min(...nodes.map(n => n.position.y));
+            const maxX = Math.max(...nodes.map(n => n.position.x + size(n).width));
+            const maxY = Math.max(...nodes.map(n => n.position.y + size(n).height));
 
-                const groupNode: CustomNodeType = {
-                    id: nanoid(),
+            const groupNode: CustomNodeType = {
+                id: nanoid(),
+                type: 'group',
+                width: maxX - minX + 2 * pad,
+                height: maxY - minY + 2 * pad + header,
+                data: {
                     type: 'group',
-                    width: maxX - minX + 40,
-                    height: maxY - minY + 40,
-                    data: {
-                        type: 'group',
-                        label: 'Group',
-                        category: 'group',
-                        module: '',
-                        action: '',
-                        params: {},
-                    },
-                    position: {
-                        x: minX - 20,
-                        y: minY - 20,
-                    },
-                };
-
-                const updatedNodes = state.nodes.map(n => {
-                    if (ids.includes(n.id)) {
-                        return {
-                            ...n,
-                            parentId: groupNode.id,
-                            position: {
-                                x: n.position.x - minX + 20,
-                                y: n.position.y - minY + 20,
-                            },
-                            extent: 'parent' as const
-                        };
+                    label: 'Group',
+                    category: 'group',
+                    module: '',
+                    action: '',
+                    params: {},
+                    collapsed: false,
+                },
+                position: {
+                    x: minX - pad,
+                    y: minY - pad - header,
+                },
+            };
+            const members = new Set(nodes.map(n => n.id));
+            set((state) => ({
+                nodes: [groupNode, ...state.nodes.map(n => members.has(n.id)
+                    ? {
+                        ...n,
+                        parentId: groupNode.id,
+                        position: { x: n.position.x - groupNode.position.x, y: n.position.y - groupNode.position.y },
+                        extent: 'parent' as const,
                     }
-                    return n;
-                });
-
-                return { nodes: [groupNode, ...updatedNodes] };
-            });
+                    : n)],
+            }));
+            return groupNode.id;
         },
         ungroupNodes: (id: string) => {
             set((state) => {
-                const nodes = state.nodes.filter(n => n.id !== id);
-                return { nodes };
+                const group = state.nodes.find(n => n.id === id);
+                if (!group) return state;
+                return {
+                    nodes: state.nodes.filter(n => n.id !== id).map(n => {
+                        if (n.parentId !== id) return n;
+                        const member = { ...n, position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y } };
+                        delete member.parentId;
+                        delete member.extent;
+                        return member;
+                    }),
+                };
             });
+        },
+        setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => {
+            set((state) => ({ nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n) }));
         },
         setViewport: (viewport: Viewport) => {
             set({ viewport });

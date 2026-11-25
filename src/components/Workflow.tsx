@@ -12,9 +12,11 @@ import {
   Viewport,
   useUpdateNodeInternals,
   ConnectionLineType,
+  NodeToolbar,
+  Position,
 } from '@xyflow/react'
 import { useShallow } from 'zustand/react/shallow'
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import { enqueueSnackbar } from 'notistack';
 
@@ -25,8 +27,11 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 
 import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
+import GroupNode from './GroupNode';
+import { foldView } from './groups';
 
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import FileBrowserDialog from './FileBrowserDialog';
 import ModelManagerDialog from './ModelManagerDialog';
 import AlertDialog from './AlertDialog';
@@ -37,7 +42,8 @@ import { useSavedGraphStore } from '../stores/useSavedGraphStore';
 
 const nodeTypes = {
   custom: CustomNode,
-  any: AnyNode
+  any: AnyNode,
+  group: GroupNode, // ours
 };
 
 function Workflow() {
@@ -61,6 +67,7 @@ function Workflow() {
   const removeEdges = useFlowStore(state => state.removeEdges);
   const setParam = useFlowStore(state => state.setParam);
   const updateViewportStore = useFlowStore(state => state.setViewport);
+  const groupNodes = useFlowStore(state => state.groupNodes);
   const updateNodeInternals = useUpdateNodeInternals();
 
   const {
@@ -543,12 +550,45 @@ function Workflow() {
     updateViewportStore(viewport);
   }, [updateViewportStore]);
 
+  // ours: folded groups drawn as cards, and the selection grouped by the toolbar's button or Ctrl/⌘ G
+  const view = useMemo(() => foldView(nodes, edges), [nodes, edges]);
+  const groupable = nodes.filter(n => n.selected && n.data.type !== 'group' && !n.parentId).map(n => n.id);
+  const groupSelected = useCallback(() => {
+    const ids = useFlowStore.getState().nodes.filter(n => n.selected && n.data.type !== 'group' && !n.parentId).map(n => n.id);
+    if (ids.length < 2) return;
+    const zoom = useFlowStore.getState().viewport.zoom || 1;
+    const sizes = Object.fromEntries(ids.map(id => {
+      // what the node draws, previews included, which can reach past its measured box
+      const el = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`);
+      if (!el) return [id, { width: 0, height: 0 }];
+      const box = el.getBoundingClientRect();
+      let right = box.right, bottom = box.bottom;
+      el.querySelectorAll('*').forEach(child => {
+        const r = child.getBoundingClientRect();
+        if (r.width && r.height) { right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom); }
+      });
+      return [id, { width: (right - box.left) / zoom, height: (bottom - box.top) / zoom }];
+    }));
+    groupNodes(ids, sizes);
+  }, [groupNodes]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && !typing) {
+        e.preventDefault();
+        groupSelected();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [groupSelected]);
+
   return (
     <Box sx={{ width: '100%', height: '100%' }}>
       <ReactFlow
         nodeTypes={nodeTypes}
-        nodes={nodes}
-        edges={edges}
+        nodes={view.nodes}
+        edges={view.edges}
         defaultViewport={defaultViewport}
         connectionLineType={edgeType as ConnectionLineType}
         nodeOrigin={[0, 0]}
@@ -574,6 +614,9 @@ function Workflow() {
         onViewportChange={handleViewportChange}
         className={`${isConnecting ? 'connecting' : ''} ${isConnectionValid !== null ? isConnectionValid ? 'valid-connection' : 'invalid-connection' : ''}`}
       >
+        <NodeToolbar nodeId={groupable} isVisible={groupable.length >= 2} position={Position.Top}>
+          <Button size="small" variant="contained" onClick={groupSelected} title="Group the selected nodes (Ctrl/⌘ G)">Group</Button>
+        </NodeToolbar>
         <Background
           variant={BackgroundVariant.Dots}
           gap={16}
