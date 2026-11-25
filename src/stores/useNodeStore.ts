@@ -14,6 +14,7 @@ export type NodeData = {
     executionTime?: Record<string, number>;
     memoryUsage?: Record<string, number>;
     isCached?: boolean;
+    skipped?: boolean; // ours: the last run had nothing for it to do (the server's 'skipped')
     progress?: number;
     minimized?: boolean;
     headerColor?: string;

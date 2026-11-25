@@ -54,7 +54,7 @@ export type FlowStore = {
     ungroupNodes: (id: string) => void;
     setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed' | 'outputNode' | 'pinned'>>) => void;
     setViewport: (viewport: Viewport) => void;
-    setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => void;
+    setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
     updateCacheStatus: (ids: string | string[]) => void;
     exportGraph: (sid: string, targetNodeId?: string) => APIGraphExport;
     updateProgress: (id: string, progress: number) => void;
@@ -519,12 +519,12 @@ export const useFlowStore = create<FlowStore>()(
             set({ viewport });
         },
 
-        setNodeCached: (id: string, isCached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => {
+        setNodeCached: (id: string, isCached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped = false) => {
             set((state) => {
                 const node = state.nodes.find(n => n.id === id);
                 if (!node) return state;
                 return {
-                    nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isCached, memoryUsage: !isCached ? undefined : memoryUsage || n.data.memoryUsage || {}, executionTime: !isCached ? undefined : executionTime || n.data.executionTime || {} } } : n)
+                    nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isCached, skipped, memoryUsage: !isCached ? undefined : memoryUsage || n.data.memoryUsage || {}, executionTime: !isCached ? undefined : executionTime || n.data.executionTime || {} } } : n)
                 };
             });
         },

@@ -151,6 +151,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         justifyContent: "space-between",
         width: "100%",
         minWidth: 200,
+        opacity: node.data.skipped ? 0.5 : 1, // ours
         maxWidth: MAX_NODE_WIDTH,
         minHeight: "100%",
         maxHeight: MAX_NODE_HEIGHT,
@@ -271,7 +272,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             className="nodrag"
             sx={{ p: 0.5 }}
             disabled={!node.data.isCached}
-            title={node.data.isCached ? 'Click to clear cache' : 'Not cached'}
+            title={node.data.skipped ? 'Skipped: nothing to do in this run' : node.data.isCached ? 'Click to clear cache' : 'Not cached'}
             onClick={handleClearCache}
           >
             <CircleIcon sx={{ fontSize: '14px', color: node.data.isCached ? 'success.main' : 'text.secondary.dark' }} />
@@ -413,7 +414,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   if (prev.data.memoryUsage?.last !== next.data.memoryUsage?.last) {
     return false;
   }
-  if (prev.data.isCached !== next.data.isCached) {
+  if (prev.data.isCached !== next.data.isCached || prev.data.skipped !== next.data.skipped) {
     return false;
   }
   if (prev.data.progress !== next.data.progress) {

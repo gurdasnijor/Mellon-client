@@ -154,6 +154,10 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                     useFlowStore.getState().updateProgress(message.node, 0);
                     //console.info(`Node ${message.node}, ${message.name}, executed in ${message.executionTime?.last ?? 0}ms`);
                     break;
+                case 'skipped': // ours: a node the run had nothing for, not cached and not running
+                    useFlowStore.getState().setNodeCached(message.node, false, undefined, undefined, true);
+                    useFlowStore.getState().updateProgress(message.node, 0);
+                    break;
                 case 'graph_completed':
                     console.info('Graph completed in', message.executionTime, 'ms');
                     useFlowStore.getState().lastExecutionTime = message.executionTime ?? 0;
