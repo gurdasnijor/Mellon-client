@@ -6,6 +6,7 @@ import { useFlowStore } from './useFlowStore';
 import { NodeParams, useNodesStore } from './useNodeStore';
 import { useTaskStore } from './useTaskStore';
 import { useSettingsStore } from './useSettingsStore';
+import { recheck } from './stored';
 import { runGraph } from '../utils/runGraph';
 import { enqueueSnackbar } from 'notistack';
 
@@ -144,6 +145,7 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                     }
                     const cached = message.cachedNodes ?? [];
                     useFlowStore.getState().resetStatus(cached);
+                    recheck(); // ours: then what the store holds
                     break;
                 case 'executed':
                     if (!message.node) {

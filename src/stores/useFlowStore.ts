@@ -56,7 +56,7 @@ export type FlowStore = {
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
     updateCacheStatus: (ids: string | string[]) => void;
-    exportGraph: (sid: string, targetNodeId?: string) => APIGraphExport;
+    exportGraph: (sid: string, targetNodeId?: string, check?: boolean) => APIGraphExport;
     updateProgress: (id: string, progress: number) => void;
     resetStatus: (cachedIds: string | string[]) => void;
     toObject: () => {
@@ -539,7 +539,7 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
 
-        exportGraph: (sid: string, targetNodeId?: string) => {
+        exportGraph: (sid: string, targetNodeId?: string, check = false) => {
             const { nodes, edges } = get();
             const sessionId = sid || '';
             
@@ -647,8 +647,9 @@ export const useFlowStore = create<FlowStore>()(
                         return;
                     }
 
-                    // handle special random field
-                    if (paramData.display === 'random') {
+                    // handle special random field (ours: not when only asking what is stored, stored.ts: nothing is
+                    // rolled or written back, and a seed is sent as it stands)
+                    if (paramData.display === 'random' && !check) {
                         const fieldValue = typeof paramData.value === 'object' && 'value' in paramData.value
                             ? paramData.value.value
                             : paramData.value;
@@ -665,7 +666,9 @@ export const useFlowStore = create<FlowStore>()(
 
                     const param: APINodeExport['params'][string] = {
                         display: paramData.display,
-                        value: paramData.value,
+                        value: check && paramData.display === 'random' && typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value
+                            ? paramData.value.value
+                            : paramData.value,
                     };
                     if (paramData.spawn) {
                         param.spawn = true;
