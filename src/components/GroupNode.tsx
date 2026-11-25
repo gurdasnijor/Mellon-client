@@ -51,12 +51,14 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     .filter(f => f.fields.length)
     .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
   const output = members.find(m => m.id === node.data.outputNode);
-  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px
+  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px,
+  // a take or a picture in it fitted whole inside that (a 768 by 1344 take was cut to its top)
   const face = (m: CustomNodeType, only: string[], title: string, result = false) => (
     <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
       <Typography sx={{ fontSize: '18px', color: 'warning.main', mb: 0.5 }}>{title}</Typography>
       <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
-        <Box sx={{ zoom: 1.4, ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
+        <Box sx={{ zoom: 1.4, ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto',
+          '& video, & img': { maxHeight: 480 / 1.4 - 16, width: 'auto !important', maxWidth: '100%', mx: 'auto' } } : {}) }}>
         <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
           module={m.data.module || ''} action={m.data.action || ''} />
         </Box>
