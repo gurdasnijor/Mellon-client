@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react'
 
 import config from '../../app.config'
-import { defaultFace } from '../components/groups'
+import { defaultFace, GROUP_HEADER } from '../components/groups'
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>
 export interface CustomConnection extends Connection {
@@ -457,7 +457,7 @@ export const useFlowStore = create<FlowStore>()(
             const nodes = get().nodes.filter(n => ids.includes(n.id) && n.data.type !== 'group' && !n.parentId);
             if (nodes.length === 0) return null;
             const size = (n: CustomNodeType) => sizes?.[n.id] ?? { width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 };
-            const pad = 20, header = 48;
+            const pad = 20, header = GROUP_HEADER;
 
             const minX = Math.min(...nodes.map(n => n.position.x));
             const minY = Math.min(...nodes.map(n => n.position.y));

@@ -6,7 +6,9 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 // when it draws, gives the group a card's size and redraws every wire that crosses the group's frame to a port on the
 // card. A wire keeps its id, so selecting or deleting it edits the stored edge.
 
-export const CARD_WIDTH = 440;
+// sized to be read with the whole graph in view, as the cards stand in for nodes several times their size
+export const CARD_WIDTH = 600;
+export const GROUP_HEADER = 72;
 
 export type Port = { id: string; label: string };
 

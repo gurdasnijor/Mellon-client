@@ -2,21 +2,20 @@ import { memo, useEffect, useState } from 'react';
 import { Handle, NodeProps, Position, useUpdateNodeInternals } from '@xyflow/react';
 
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import Typography from '@mui/material/Typography';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 
 import { useShallow } from 'zustand/react/shallow';
 
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
-import { groupPorts, groupStatus, results } from './groups';
+import { GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
 import NodeContent from './NodeContent';
 import ErrorBoundary from './ErrorBoundary';
 
-const HEADER = 48;
 
 /**
  * ours: a group of nodes. Unfolded, a frame with a header over its members; folded, a card with the same header and a
@@ -52,12 +51,15 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     .filter(f => f.fields.length)
     .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
   const output = members.find(m => m.id === node.data.outputNode);
-  const face = (m: CustomNodeType, only: string[], title: string) => (
+  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px
+  const face = (m: CustomNodeType, only: string[], title: string, result = false) => (
     <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
-      <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: 0.5 }}>{title}</Typography>
+      <Typography sx={{ fontSize: '18px', color: 'warning.main', mb: 0.5 }}>{title}</Typography>
       <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
+        <Box sx={{ zoom: 1.4, ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
         <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
           module={m.data.module || ''} action={m.data.action || ''} />
+        </Box>
       </ErrorBoundary>
     </Box>
   );
@@ -68,46 +70,46 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
       border: '2px solid', borderColor: node.selected ? 'primary.main' : 'rgba(255, 179, 0, 0.55)', borderRadius: 1,
       backgroundColor: folded ? 'background.paper' : 'rgba(255, 179, 0, 0.04)',
     }}>
-      <Box sx={{ height: HEADER, display: 'flex', alignItems: 'center', gap: 1, px: 1, backgroundColor: 'rgba(255, 179, 0, 0.12)' }}>
+      <Box sx={{ height: GROUP_HEADER, display: 'flex', alignItems: 'center', gap: 1, px: 1, backgroundColor: 'rgba(255, 179, 0, 0.12)' }}>
         <IconButton size="small" className="nodrag" title={folded ? 'Unfold' : 'Fold'} onClick={() => setGroupData(node.id, { collapsed: !folded })}>
-          {folded ? <ArrowRightIcon /> : <ArrowDropDownIcon />}
+          {folded ? <ArrowRightIcon sx={{ fontSize: '36px' }} /> : <ArrowDropDownIcon sx={{ fontSize: '36px' }} />}
         </IconButton>
         {editing
           ? <InputBase className="nodrag" autoFocus value={title} onChange={e => setTitle(e.target.value)} onBlur={rename}
               onKeyDown={e => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setTitle(node.data.label); setEditing(false); } }}
-              sx={{ flexGrow: 1, fontSize: '18px' }} />
-          : <Typography sx={{ flexGrow: 1, fontSize: '18px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              sx={{ flexGrow: 1, fontSize: '32px' }} />
+          : <Typography sx={{ flexGrow: 1, fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               title="Double-click to rename" onDoubleClick={() => { setTitle(node.data.label); setEditing(true); }}>{node.data.label}</Typography>}
-        <Typography data-key="group-status" sx={{ fontSize: '13px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid',
+        <Typography data-key="group-status" sx={{ fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid',
           borderColor: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary',
           color: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary', whiteSpace: 'nowrap' }}>
           {running
             ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
             : `${status.stored} of ${status.count} stored`}
         </Typography>
-        <Button size="small" className="nodrag" onClick={() => ungroupNodes(node.id)}>Ungroup</Button>
+        <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
       </Box>
       {folded && (
         <Box sx={{ py: 1 }}>
           {ins.map(p => (
             <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25 }}>
               <Handle type="target" position={Position.Left} id={p.id} isConnectable={false} />
-              <Typography sx={{ fontSize: '13px' }}>{p.label}</Typography>
+              <Typography sx={{ fontSize: '20px' }}>{p.label}</Typography>
             </Box>
           ))}
           {(faces.length > 0 || output) && (
             <Box className="nodrag nowheel" sx={{ my: 1, pt: 1, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider' }}>
               {faces.map(({ m, fields }) => face(m, fields, m.data.label))}
-              {output && results(output).length > 0 && face(output, results(output), `Result · ${output.data.label}`)}
+              {output && results(output).length > 0 && face(output, results(output), `Result · ${output.data.label}`, true)}
             </Box>
           )}
           {outs.map(p => (
             <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25, textAlign: 'right' }}>
               <Handle type="source" position={Position.Right} id={p.id} isConnectable={false} />
-              <Typography sx={{ fontSize: '13px' }}>{p.label}</Typography>
+              <Typography sx={{ fontSize: '20px' }}>{p.label}</Typography>
             </Box>
           ))}
-          {!ins.length && !outs.length && <Typography sx={{ px: 1.5, fontSize: '13px', color: 'text.secondary' }}>No wires cross this group</Typography>}
+          {!ins.length && !outs.length && <Typography sx={{ px: 1.5, fontSize: '20px', color: 'text.secondary' }}>No wires cross this group</Typography>}
         </Box>
       )}
     </Box>
