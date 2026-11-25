@@ -34,8 +34,12 @@ const soon = () => {
 useFlowStore.subscribe(soon);
 useTaskStore.subscribe(soon);
 
-/** A graph's nodes as it opens: nothing stored until the store says so, whatever the file saved. */
-export const unstored = (nodes: CustomNodeType[]) => nodes.map(n => ({ ...n, data: { ...n.data, isCached: false } }));
+/** A graph's nodes as it opens: nothing stored until the store says so, whatever the file saved; asked even when the
+ * graph is the one already open. */
+export function unstored(nodes: CustomNodeType[]) {
+  recheck();
+  return nodes.map(n => ({ ...n, data: { ...n.data, isCached: false } }));
+}
 
 /** Asks again though the graph is unchanged: the server's welcome has just set every node's isCached from its memory. */
 export function recheck() {
