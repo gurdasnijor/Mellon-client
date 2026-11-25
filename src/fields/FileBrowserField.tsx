@@ -41,7 +41,9 @@ export default function FileBrowserField(props: FieldProps) {
   const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
 
-  async function uploadFile(file: File) {
+  // The file's path on the server once uploaded; the field is updated once for all of a pick or a drop (addFiles), since
+  // props.value is the field's value from before them
+  async function uploadFile(file: File): Promise<string[]> {
     const formData = new FormData();
     formData.append('file', file);
     const fileType = file.type.startsWith('image/') ? 'images' : 'videos';
@@ -54,59 +56,44 @@ export default function FileBrowserField(props: FieldProps) {
       const data = await response.json();
 
       if (!data.error) {
-        const newFiles = Array.isArray(data.path) ? data.path : [data.path];
-        let updatedFiles;
-        if (fileType === 'videos') {
-          // Videos are always single
-          updatedFiles = newFiles;
-        } else {
-          updatedFiles = props.fieldOptions?.multiple ? 
-            Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles])) : 
-            newFiles;
-        }
-        props.updateStore(props.fieldKey, updatedFiles);
-      } else {
-        console.error(data.error);
+        return Array.isArray(data.path) ? data.path : [data.path];
       }
+      console.error(data.error);
     } catch (error) {
       console.error(error);
     }
+    return [];
+  }
+
+  // Every image of a pick or a drop, added to the field's own if it takes several; else the first file, a video
+  // always alone
+  async function addFiles(picked: File[]) {
+    const files = picked.filter(file =>
+      (allowImages && file.type.startsWith('image/')) ||
+      (allowVideos && file.type.startsWith('video/'))
+    );
+    if (files.length === 0) return;
+    const several = props.fieldOptions?.multiple && allowImages && !files[0].type.startsWith('video/');
+    const newFiles: string[] = [];
+    for (const file of several ? files.filter(f => f.type.startsWith('image/')) : files.slice(0, 1)) {
+      newFiles.push(...await uploadFile(file));
+    }
+    if (newFiles.length === 0) return;
+    props.updateStore(props.fieldKey, several ?
+      Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles])) :
+      newFiles);
   }
 
   async function handleFileDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     setIsDropActive(false);
-    const files = [...e.dataTransfer.files].filter(file => 
-      (allowImages && file.type.startsWith('image/')) || 
-      (allowVideos && file.type.startsWith('video/'))
-    );
-    if (files.length > 0) {
-      if (files[0].type.startsWith('video/')) {
-        await uploadFile(files[0]);
-      } else {
-        // Handle multiple image uploads if enabled
-        if (props.fieldOptions?.multiple && allowImages) {
-          //const currentImages = props.value?.filter(isImage) || [];
-          const newImages = files.map(f => f);
-          for (const file of newImages) {
-            await uploadFile(file);
-          }
-        } else {
-          await uploadFile(files[0]);
-        }
-      }
-    }
+    await addFiles([...e.dataTransfer.files]);
   }
 
   async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if ((allowImages && file.type.startsWith('image/')) || (allowVideos && file.type.startsWith('video/'))) {
-        await uploadFile(file);
-      }
-    }
+    await addFiles([...(e.target.files || [])]);
+    e.target.value = '';  // so picking the same file again is a change
   }
 
   const handleMediaLoad = () => {
