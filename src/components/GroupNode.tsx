@@ -51,12 +51,15 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     .filter(f => f.fields.length)
     .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
   const output = members.find(m => m.id === node.data.outputNode);
-  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px
+  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px.
+  // On a card a video is at most 480 px tall (a portrait clip drawn at the card's width is about 1,000), and text wraps
+  // rather than scrolling sideways.
   const face = (m: CustomNodeType, only: string[], title: string, result = false) => (
     <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
       <Typography sx={{ fontSize: '18px', color: 'warning.main', mb: 0.5 }}>{title}</Typography>
       <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
-        <Box sx={{ zoom: 1.4, ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
+        <Box sx={{ zoom: 1.4, '& video': { maxHeight: 480 / 1.4 }, '& pre': { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+          ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
         <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
           module={m.data.module || ''} action={m.data.action || ''} />
         </Box>
@@ -78,14 +81,17 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
           ? <InputBase className="nodrag" autoFocus value={title} onChange={e => setTitle(e.target.value)} onBlur={rename}
               onKeyDown={e => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setTitle(node.data.label); setEditing(false); } }}
               sx={{ flexGrow: 1, fontSize: '32px' }} />
-          : <Typography sx={{ flexGrow: 1, fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          : <Typography sx={{ flexShrink: 0, maxWidth: '75%', fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               title="Double-click to rename" onDoubleClick={() => { setTitle(node.data.label); setEditing(true); }}>{node.data.label}</Typography>}
-        <Typography data-key="group-status" sx={{ fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid',
+        {/* the status gives way to the title, which keeps its width up to three quarters of the header */}
+        <Typography data-key="group-status" title={`${status.stored} of ${status.count} stored`} sx={{
+          flexShrink: 1, minWidth: 0, ml: 'auto', overflow: 'hidden', textOverflow: 'ellipsis',
+          fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid',
           borderColor: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary',
           color: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary', whiteSpace: 'nowrap' }}>
           {running
             ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
-            : `${status.stored} of ${status.count} stored`}
+            : `${status.stored}/${status.count} stored`}
         </Typography>
         <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
       </Box>
