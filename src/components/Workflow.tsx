@@ -33,6 +33,7 @@ import AlertDialog from './AlertDialog';
 import SettingsDialog from './SettingsDialog';
 import LightboxDialog from './LightboxDialog';
 import config from '../../app.config';
+import { useSavedGraphStore } from '../stores/useSavedGraphStore';
 
 const nodeTypes = {
   custom: CustomNode,
@@ -467,6 +468,7 @@ function Workflow() {
         setNodes(nodes);
         setEdges(newEdges);
         setViewport(viewport);
+        useSavedGraphStore.getState().setSaved(null, null);
       }
       reader.readAsText(file);
       return;
@@ -503,6 +505,8 @@ function Workflow() {
       setNodes(nodes);
       setEdges(newEdges);
       setViewport(viewport);
+      const saved = data.startsWith('store:');
+      useSavedGraphStore.getState().setSaved(saved ? data : null, saved ? response.headers.get('ETag') : null);
       return;
     }
 

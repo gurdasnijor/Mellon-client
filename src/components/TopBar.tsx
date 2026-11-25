@@ -4,6 +4,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useFlowStore } from '../stores/useFlowStore';
 import config from '../../app.config';
 import { runGraph } from '../utils/runGraph';
+import { useSavedGraphStore } from '../stores/useSavedGraphStore';
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography';
@@ -29,6 +30,7 @@ import SignalWifi4BarIcon from '@mui/icons-material/SignalWifi4Bar';
 import SignalWifiOffIcon from '@mui/icons-material/SignalWifiOff';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import GetAppIcon from '@mui/icons-material/GetApp';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import StopIcon from '@mui/icons-material/Stop';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -87,7 +89,41 @@ function TopBar() {
   const handleNewClick = useCallback(() => {
     clearWorkflow();
     setViewport({ x: 0, y: 0, zoom: 1 });
+    useSavedGraphStore.getState().setSaved(null, null);
   }, [clearWorkflow, setViewport]);
+
+  // ours: save the graph to the store as <workspace>/<name>; over the graph it was opened from only if that is
+  // unchanged since (If-Match), and under a new name only if none is saved there
+  const handleSaveClick = useCallback(async () => {
+    const { path, etag, setSaved } = useSavedGraphStore.getState();
+    const opened = path ? path.replace(/^store:graphs\//, '').replace(/\.json$/, '') : '';
+    const name = window.prompt('Save as <workspace>/<name>', opened)?.trim().replace(/\.json$/, '');
+    if (!name) {
+      return;
+    }
+    const target = `${name}.json`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (etag && path === `store:graphs/${target}`) {
+      headers['If-Match'] = etag;
+    }
+    try {
+      const response = await fetch(`${config.serverAddress}/graphs/${target.split('/').map(encodeURIComponent).join('/')}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(toObject()),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        enqueueSnackbar(data.error, { variant: 'error', autoHideDuration: data.error.length * 80 });
+        return;
+      }
+      setSaved(data.path, data.etag);
+      enqueueSnackbar(`Saved ${name}`, { variant: 'success' });
+    } catch (error) {
+      const err = `Error saving the graph: ${error}`;
+      enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
+    }
+  }, [toObject]);
 
   const handleExportClick = useCallback(() => {
     const graph = toObject();
@@ -186,6 +222,15 @@ function TopBar() {
           onClick={handleNewClick}
         >
           New
+        </Button>
+        <Button
+          variant='text'
+          size='small'
+          startIcon={<SaveOutlinedIcon />}
+          sx={{ ml: 1 }}
+          onClick={handleSaveClick}
+        >
+          Save
         </Button>
         <Button
           variant='text'
