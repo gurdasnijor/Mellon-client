@@ -76,3 +76,34 @@ export function groupStatus(groupId: string, nodes: CustomNodeType[]) {
     running: running ? { label: labelOf(running), progress: running.data.progress ?? 0 } : null,
   };
 }
+
+// the stock Dynamic Block node's own controls, never on a card
+const CONTROLS = new Set(['repo_id', 'load_block_button', 'device', 'auto_offload', 'trust_remote_code']);
+
+/** A node's fields a group can pin: what can be edited on it now (not a wire, a result or a block control). */
+export function pinnable(node: Pick<CustomNodeType, 'data'>): string[] {
+  return Object.entries(node.data.params ?? {})
+    .filter(([key, p]) => !CONTROLS.has(key) && !p.hidden && !p.isInput && p.display !== 'input' && p.display !== 'output'
+      && !String(p.display ?? '').startsWith('ui_'))
+    .map(([key]) => key);
+}
+
+/** A node's result: the fields it shows what it made in. */
+export const results = (node: Pick<CustomNodeType, 'data'>) =>
+  Object.entries(node.data.params ?? {}).filter(([, p]) => !p.hidden && String(p.display ?? '').startsWith('ui_') && p.display !== 'ui_group').map(([key]) => key);
+
+/**
+ * A new group's face: its input node is the first member no other member feeds, with its editable fields pinned; its
+ * output node is the last member read from outside the group, or the last member with a result.
+ */
+export function defaultFace(members: CustomNodeType[], edges: Edge[]) {
+  const ids = new Set(members.map(m => m.id));
+  const input = members.find(m => !edges.some(e => e.target === m.id && ids.has(e.source))) ?? members[0];
+  const output = [...members].reverse().find(m => edges.some(e => e.source === m.id && !ids.has(e.target)))
+    ?? [...members].reverse().find(m => results(m).length);
+  return {
+    inputNode: input?.id,
+    outputNode: output?.id,
+    pinned: input ? pinnable(input).map(field => ({ node: input.id, field })) : [],
+  };
+}

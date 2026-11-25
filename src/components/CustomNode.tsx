@@ -1,5 +1,5 @@
 import { NodeProps, useStore, useUpdateNodeInternals } from "@xyflow/react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomNodeType, useFlowStore } from "../stores/useFlowStore";
 import { NodeParams } from "../stores/useNodeStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
@@ -8,7 +8,8 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { deepEqual } from '../utils/deepEqual';
 import { formatExecutionTime } from '../utils/formatExecutionTime';
 import { formatMemory } from '../utils/formatMemory';
-import NodeContent from "./NodeContent";
+import NodeContent, { Pins } from "./NodeContent";
+import { pinnable, results } from "./groups";
 
 import Box from "@mui/material/Box";
 import Popover from "@mui/material/Popover";
@@ -22,6 +23,7 @@ import TimerIcon from '@mui/icons-material/Timer';
 import MemoryIcon from '@mui/icons-material/Memory';
 import CircleIcon from '@mui/icons-material/Circle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import OutputIcon from '@mui/icons-material/Output';
 
 import ErrorBoundary from './ErrorBoundary';
 import config from "../../app.config";
@@ -45,6 +47,28 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const { sid, isConnected } = useWebsocketStore();
   const zoomLevel = useStore((store) => store.transform[2]);
   const updateNodeInternals = useUpdateNodeInternals();
+  // ours: the group this node is in, whose folded card shows the fields pinned here and one member's result
+  // (read from the store: memo below keeps this node from drawing again when only its parentId changes)
+  const group = useFlowStore((state) => {
+    const parentId = state.nodes.find(n => n.id === node.id)?.parentId;
+    return parentId ? state.nodes.find(n => n.id === parentId) : undefined;
+  });
+  const setGroupData = useFlowStore((state) => state.setGroupData);
+  const pinnableJson = JSON.stringify(group ? pinnable(node) : []);
+  const pins = useMemo<Pins | undefined>(() => {
+    if (!group) return undefined;
+    const all = group.data.pinned ?? [];
+    const pinned = all.filter(p => p.node === node.id).map(p => p.field);
+    return {
+      pinnable: JSON.parse(pinnableJson),
+      pinned,
+      toggle: (field: string) => setGroupData(group.id, {
+        pinned: pinned.includes(field) ? all.filter(p => p.node !== node.id || p.field !== field) : [...all, { node: node.id, field }],
+      }),
+    };
+  }, [group, node.id, pinnableJson, setGroupData]);
+  const isOutput = !!group && group.data.outputNode === node.id;
+  const hasResult = !!group && results(node).length > 0;
 
   const handleUpdateStore = useCallback((param: string, value: any, key?: keyof NodeParams) => {
     setParam(node.id, param, value, key);
@@ -159,6 +183,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {label}
         </Box>
         <Box className="nodrag">
+          {hasResult && <IconButton size="small" title={isOutput ? "Shown on the folded group: click to hide" : "Show this node's result on the folded group"}
+            onClick={() => setGroupData(group!.id, { outputNode: isOutput ? undefined : node.id })}
+            sx={{ color: isOutput ? 'warning.main' : 'inherit' }}><OutputIcon sx={{ fontSize: '18px' }} /></IconButton>}
           <IconButton size="small" title="Run to here" disabled={!isConnected} onClick={handleRunToHere}><PlayArrowIcon sx={{ fontSize: '18px' }} /></IconButton>
           <IconButton size="small" onClick={(e) => setHelpAnchorEl(e.currentTarget)}><HelpOutlineIcon sx={{ fontSize: '18px' }} /></IconButton>
           <Popover
@@ -206,7 +233,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           },
       }}>
         <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} />
+          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} pins={pins} />
         </ErrorBoundary>
       </Box>
 

@@ -18,6 +18,7 @@ import {
 } from '@xyflow/react'
 
 import config from '../../app.config'
+import { defaultFace } from '../components/groups'
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>
 export interface CustomConnection extends Connection {
@@ -51,7 +52,7 @@ export type FlowStore = {
     getSignalValue: (id: string, param: string) => any;
     groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => string | null;
     ungroupNodes: (id: string) => void;
-    setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => void;
+    setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed' | 'outputNode' | 'pinned'>>) => void;
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => void;
     updateCacheStatus: (ids: string | string[]) => void;
@@ -476,6 +477,7 @@ export const useFlowStore = create<FlowStore>()(
                     action: '',
                     params: {},
                     collapsed: false,
+                    ...defaultFace(nodes, get().edges),
                 },
                 position: {
                     x: minX - pad,

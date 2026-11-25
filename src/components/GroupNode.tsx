@@ -9,8 +9,12 @@ import Typography from '@mui/material/Typography';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 
+import { useShallow } from 'zustand/react/shallow';
+
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
-import { groupPorts, groupStatus } from './groups';
+import { groupPorts, groupStatus, results } from './groups';
+import NodeContent from './NodeContent';
+import ErrorBoundary from './ErrorBoundary';
 
 const HEADER = 48;
 
@@ -26,6 +30,8 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
   const status: ReturnType<typeof groupStatus> = JSON.parse(useFlowStore(s => JSON.stringify(groupStatus(node.id, s.nodes))));
   const portsJson = useFlowStore(s => JSON.stringify(groupPorts(node.id, s.nodes, s.edges)));
   const { ins, outs }: ReturnType<typeof groupPorts> = JSON.parse(portsJson);
+  const setParam = useFlowStore(s => s.setParam);
+  const members = useFlowStore(useShallow(s => s.nodes.filter(n => n.parentId === node.id)));
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(node.data.label);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -38,6 +44,23 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     else setTitle(node.data.label);
   };
   const running = status.running;
+
+  // the face: each member's pinned fields, in the order pinned, under the member's name; then the output node's result
+  const pinned = node.data.pinned ?? [];
+  const faces = members
+    .map(m => ({ m, fields: pinned.filter(p => p.node === m.id && m.data.params?.[p.field]).map(p => p.field) }))
+    .filter(f => f.fields.length)
+    .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
+  const output = members.find(m => m.id === node.data.outputNode);
+  const face = (m: CustomNodeType, only: string[], title: string) => (
+    <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
+      <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: 0.5 }}>{title}</Typography>
+      <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
+        <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
+          module={m.data.module || ''} action={m.data.action || ''} />
+      </ErrorBoundary>
+    </Box>
+  );
 
   return (
     <Box sx={{
@@ -72,6 +95,12 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
               <Typography sx={{ fontSize: '13px' }}>{p.label}</Typography>
             </Box>
           ))}
+          {(faces.length > 0 || output) && (
+            <Box className="nodrag nowheel" sx={{ my: 1, pt: 1, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider' }}>
+              {faces.map(({ m, fields }) => face(m, fields, m.data.label))}
+              {output && results(output).length > 0 && face(output, results(output), `Result · ${output.data.label}`)}
+            </Box>
+          )}
           {outs.map(p => (
             <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25, textAlign: 'right' }}>
               <Handle type="source" position={Position.Right} id={p.id} isConnectable={false} />

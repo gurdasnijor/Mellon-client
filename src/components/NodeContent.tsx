@@ -3,6 +3,9 @@ import { NodeParams } from '../stores/useNodeStore';
 import { deepEqual } from '../utils/deepEqual';
 
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import PushPinIcon from '@mui/icons-material/PushPin';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -63,15 +66,19 @@ const NodeContent = ({
   module,
   action,
   groupHandles = false,
+  only,
+  pins,
   }: {
     nodeId: string,
     params: NodeParams,
     updateStore: (param: string, value: any, key?: keyof NodeParams) => void,
     module: string,
     action: string,
-    groupHandles?: boolean
+    groupHandles?: boolean,
+    only?: string[], // ours: just these fields, as a folded group's face shows them
+    pins?: Pins, // ours: a pin on each field a node's group can show folded
   }) => {
-  const fields = Object.entries(params).map(([key, data]: [string, NodeParams]) => {
+  const fields = Object.entries(params).filter(([key]) => !only || only.includes(key)).map(([key, data]: [string, NodeParams]) => {
     const label = data.label ?? (key.charAt(0).toUpperCase() + key.slice(1));
     const display = (data.isInput ? 'input' : data.display || '');
     const dataType = ((Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string') as string);
@@ -185,19 +192,36 @@ const NodeContent = ({
         return (
           <GroupMemo key={key} {...props}>
             {group.children.map(({ key: childKey, props: childProps }) => (
-              <FieldMemo key={childKey} {...childProps} />
+              <Pinned key={childKey} fieldKey={childKey} pins={pins}><FieldMemo {...childProps} /></Pinned>
             ))}
           </GroupMemo>
         );
       }
       // This is a regular field
-      return <FieldMemo key={key} {...props} />;
+      return <Pinned key={key} fieldKey={key} pins={pins}><FieldMemo {...props} /></Pinned>;
     });
 
   return orderedFields;
 };
 
 export default NodeContent;
+
+export type Pins = { pinnable: string[]; pinned: string[]; toggle: (key: string) => void };
+
+// ours: a field with its pin, for the group the node is in; without pins, the field alone
+const Pinned = ({ fieldKey, pins, children }: { fieldKey: string; pins?: Pins; children: ReactNode }) => {
+  if (!pins?.pinnable.includes(fieldKey)) return <>{children}</>;
+  const on = pins.pinned.includes(fieldKey);
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+      <Box sx={{ flexGrow: 1, minWidth: 0 }}>{children}</Box>
+      <IconButton size="small" className="nodrag" data-key="pin" title={on ? 'Unpin from the folded group' : 'Pin to the folded group'}
+        onClick={() => pins.toggle(fieldKey)} sx={{ p: 0.25, color: on ? 'warning.main' : 'text.disabled' }}>
+        {on ? <PushPinIcon sx={{ fontSize: '14px' }} /> : <PushPinOutlinedIcon sx={{ fontSize: '14px' }} />}
+      </IconButton>
+    </Box>
+  );
+};
 
 const customFieldCache: Record<string, React.LazyExoticComponent<React.ComponentType<FieldProps>>> = {};
 

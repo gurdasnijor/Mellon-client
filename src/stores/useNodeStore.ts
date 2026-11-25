@@ -18,6 +18,9 @@ export type NodeData = {
     minimized?: boolean;
     headerColor?: string;
     collapsed?: boolean; // ours: a group folded to a card
+    inputNode?: string; // ours: the member whose editable fields a new group pins
+    outputNode?: string; // ours: the member whose result a folded group shows
+    pinned?: { node: string; field: string }[]; // ours: members' fields a folded group shows, editing them there
 }
 
 export type NodeParams = {
