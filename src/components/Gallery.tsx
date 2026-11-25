@@ -16,6 +16,7 @@ import ListItemText from '@mui/material/ListItemText';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import ReplayIcon from '@mui/icons-material/Replay';
+import { unstored } from '../stores/stored';
 
 type Video = { node: string; label: string | null; file: string };
 type Render = { path: string; graph: string | null; time: string; finished: boolean; videos: Video[] };
@@ -54,7 +55,7 @@ export default function Gallery() {
       return;
     }
     const { nodes, edges, viewport } = await response.json();
-    setNodes(nodes);
+    setNodes(unstored(nodes));
     setEdges(edges.map((e: Edge) => ({ ...e, type: edgeType })));
     setViewport(viewport);
     useSavedGraphStore.getState().setSaved(path, response.headers.get('ETag'));
