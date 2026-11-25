@@ -21,6 +21,7 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import TimerIcon from '@mui/icons-material/Timer';
 import MemoryIcon from '@mui/icons-material/Memory';
 import CircleIcon from '@mui/icons-material/Circle';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import ErrorBoundary from './ErrorBoundary';
 import config from "../../app.config";
@@ -41,7 +42,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const [executionTimeAnchorEl, setExecutionTimeAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [memoryAnchorEl, setMemoryAnchorEl] = useState<HTMLButtonElement | null>(null);
   const runningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { sid } = useWebsocketStore();
+  const { sid, isConnected } = useWebsocketStore();
   const zoomLevel = useStore((store) => store.transform[2]);
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -62,6 +63,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       }, interval);
     }
   }, [setParam, node.id, sid]);
+
+  // ours: run this node and the nodes it reads from, as Run does for the whole graph
+  const handleRunToHere = useCallback(() => {
+    if (!sid) return;
+    useSettingsStore.getState().setRunningState('one_shot');
+    runGraph(sid, node.id);
+  }, [sid, node.id]);
 
   const handleClearCache = useCallback(async () => {
     try {
@@ -151,6 +159,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {label}
         </Box>
         <Box className="nodrag">
+          <IconButton size="small" title="Run to here" disabled={!isConnected} onClick={handleRunToHere}><PlayArrowIcon sx={{ fontSize: '18px' }} /></IconButton>
           <IconButton size="small" onClick={(e) => setHelpAnchorEl(e.currentTarget)}><HelpOutlineIcon sx={{ fontSize: '18px' }} /></IconButton>
           <Popover
             open={!!helpAnchorEl}
