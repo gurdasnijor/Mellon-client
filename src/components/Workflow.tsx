@@ -39,6 +39,7 @@ import SettingsDialog from './SettingsDialog';
 import LightboxDialog from './LightboxDialog';
 import config from '../../app.config';
 import { useSavedGraphStore } from '../stores/useSavedGraphStore';
+import { unstored } from '../stores/stored';
 
 const nodeTypes = {
   custom: CustomNode,
@@ -472,7 +473,7 @@ function Workflow() {
           type: edgeType
         }));
 
-        setNodes(nodes);
+        setNodes(unstored(nodes));
         setEdges(newEdges);
         setViewport(viewport);
         useSavedGraphStore.getState().setSaved(null, null);
@@ -509,7 +510,7 @@ function Workflow() {
         type: edgeType
       }));
 
-      setNodes(nodes);
+      setNodes(unstored(nodes));
       setEdges(newEdges);
       setViewport(viewport);
       const saved = data.startsWith('store:');
