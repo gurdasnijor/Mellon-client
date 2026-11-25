@@ -16,6 +16,7 @@ import NodeList from "./components/NodeList";
 import { useNodesStore } from './stores/useNodeStore';
 import { useWebsocketStore } from './stores/useWebsocketStore.ts';
 import GraphList from './components/GraphList.tsx';
+import Gallery from './components/Gallery.tsx';
 
 const TAB_BAR_WIDTH = 54;
 const WORKSPACE_MIN_WIDTH = 240
@@ -215,7 +216,7 @@ export default function App() {
               width: isRightPanelOpen ? `${rightPanelWidth}px` : '0px'
             }}
           >
-            <h2>Gallery (TODO)</h2>
+            {isRightPanelOpen && <Gallery />}
             
             {/* Resize handle */}
             <Box
