@@ -29,6 +29,7 @@ import ErrorBoundary from './ErrorBoundary';
 import config from "../../app.config";
 import { enqueueSnackbar } from 'notistack';
 import { runGraph } from "../utils/runGraph";
+import { recheck } from "../stores/stored";
 
 const MAX_NODE_WIDTH = 1280;
 const MAX_NODE_HEIGHT = 1280;
@@ -102,6 +103,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             throw new Error('Failed to delete cache');
         }
         setNodeCached(node.id, false);
+        // ours: its results were URLs into that memory, so they go; the store is asked again, and the dot then says
+        // whether it holds the node, whose results it draws again if so
+        recheck(useFlowStore.getState().nodes.filter(n => n.id !== node.id).map(n => n.id));
         enqueueSnackbar('Cache cleared', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
         console.error('Failed to delete cache', error);

@@ -15,6 +15,7 @@ import {
   NodeToolbar,
   Position,
   Panel,
+  type OnBeforeDelete,
 } from '@xyflow/react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -507,6 +508,26 @@ function Workflow() {
     addNode(newNode);
   }, [screenToFlowPosition, addNode, nodesRegistry, open, show]);
 
+  // ours: a key press removes a group's members with it, and nothing undoes it, so removing a group asks first; the
+  // dialog closed any way but Delete keeps everything. Removing plain nodes and wires doesn't ask, as upstream.
+  const deciding = useRef<((remove: boolean) => void) | null>(null);
+  const confirmDelete: OnBeforeDelete<CustomNodeType> = useCallback(async ({ nodes: removing }) => {
+    const groups = removing.filter(n => n.type === 'group');
+    if (!groups.length) return true;
+    const members = removing.filter(n => n.parentId && groups.some(g => g.id === n.parentId)).length;
+    const names = groups.map(g => `"${g.data.label || 'Group'}"`).join(', ');
+    return new Promise<boolean>(resolve => {
+      deciding.current = resolve;
+      setAlertOpener({
+        title: groups.length === 1 ? 'Delete this group?' : `Delete ${groups.length} groups?`,
+        message: `${names} and the ${members} node${members === 1 ? '' : 's'} in ${groups.length === 1 ? 'it' : 'them'} will be deleted. This can't be undone.`,
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        onConfirm: () => resolve(true),
+      });
+    });
+  }, [setAlertOpener]);
+
   const handleEdgeDoubleClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.preventDefault();
     removeEdges(edge.id);
@@ -563,6 +584,7 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
+        onBeforeDelete={confirmDelete}
         proOptions={{ hideAttribution: true }}
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
@@ -648,7 +670,7 @@ function Workflow() {
       {alertOpener && (
         <AlertDialog
           opener={alertOpener}
-          onClose={() => { setAlertOpener(null); }}
+          onClose={() => { deciding.current?.(false); deciding.current = null; setAlertOpener(null); }}
         />
       )}
     </Box>

@@ -61,11 +61,12 @@ const soon = () => {
 useFlowStore.subscribe(soon);
 useTaskStore.subscribe(soon);
 
-/** A graph's nodes as it opens: nothing stored and no result until the store says so, whatever the file saved (its
- * results are another server's /cache); asked even when the graph is the one already open. */
+/** A graph's nodes as it opens: nothing stored, running, failed or showing a result until the store says so, whatever
+ * the file saved (its results are another server's /cache, its progress that of a run when it was saved); asked even
+ * when the graph is the one already open. */
 export function unstored(nodes: CustomNodeType[]) {
   recheck();
-  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false, failed: undefined } }));
+  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false, failed: undefined, progress: 0 } }));
 }
 
 /** Asks again though the graph is unchanged: the server's welcome has just set every node's isCached from its memory,
