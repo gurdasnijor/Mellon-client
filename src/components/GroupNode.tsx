@@ -8,10 +8,14 @@ import Typography from '@mui/material/Typography';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { useShallow } from 'zustand/react/shallow';
 
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { runGraph } from '../utils/runGraph';
 import { GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
 import NodeContent from './NodeContent';
 import ErrorBoundary from './ErrorBoundary';
@@ -34,6 +38,7 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(node.data.label);
   const updateNodeInternals = useUpdateNodeInternals();
+  const { sid, isConnected } = useWebsocketStore();
 
   useEffect(() => updateNodeInternals(node.id), [node.id, folded, portsJson, updateNodeInternals]);
 
@@ -93,6 +98,10 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
             ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
             : failed ? `failed · ${failed.label}` : `${status.stored}/${status.count} stored`}
         </Typography>
+        {/* a member's Run to here, for the group's output node: runs it and what it reads, as a node's header does */}
+        {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${output?.data.label ?? 'the output'})`}
+          disabled={!isConnected || !!running} onClick={() => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, node.data.outputNode); }}>
+          <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>}
         <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
       </Box>
       {folded && (
