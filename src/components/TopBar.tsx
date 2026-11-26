@@ -5,6 +5,7 @@ import { useFlowStore } from '../stores/useFlowStore';
 import config from '../../app.config';
 import { runGraph } from '../utils/runGraph';
 import { useSavedGraphStore } from '../stores/useSavedGraphStore';
+import { replacing } from '../utils/openGraph';
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography';
@@ -86,7 +87,8 @@ function TopBar() {
     connect();
   }
 
-  const handleNewClick = useCallback(() => {
+  const handleNewClick = useCallback(async () => {
+    if (!await replacing()) return; // ours: a canvas with edits asks first, as opening another graph does
     clearWorkflow();
     setViewport({ x: 0, y: 0, zoom: 1 });
     useSavedGraphStore.getState().setSaved(null, null);

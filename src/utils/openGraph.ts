@@ -41,13 +41,13 @@ function fitWhileSettling(fitView: (options?: FitViewOptions) => Promise<boolean
   fit();
 }
 
-/** Whether the canvas may be replaced: at once if it has no edits since it was opened or saved, else once the user
- * says so (the dialog closed any way but Replace keeps it). */
-function replacing() {
+/** Whether the canvas may be replaced (another graph opened, or New): at once if it has no edits since it was opened or
+ * saved, else once the user says so (the dialog closed any way but Replace keeps it). */
+export function replacing() {
   if (!edited()) return Promise.resolve(true);
   return new Promise<boolean>(resolve => useSettingsStore.getState().setAlertOpener({
     title: 'Replace this graph?',
-    message: 'The graph on the canvas has edits since it was opened or saved. Opening another replaces it, and they are lost: Save first to keep them.',
+    message: 'The graph on the canvas has edits since it was opened or saved. Replacing it loses them: Save first to keep them.',
     confirmText: 'Replace',
     cancelText: 'Cancel',
     onConfirm: () => resolve(true),

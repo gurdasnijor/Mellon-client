@@ -19,7 +19,8 @@ export default function FileBrowserField(props: FieldProps) {
   const setFileBrowserOpener = useSettingsStore(state => state.setFileBrowserOpener);
   const [isDropActive, setIsDropActive] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
-  const currentPath = props.value?.length > 0 
+  // ours: a link or a Library pick (sha256:…) is no folder to browse
+  const currentPath = props.value?.length > 0 && Array.isArray(props.value) && !/^(sha256:|[a-z]+:\/\/)/.test(props.value[0])
     ? props.value[0].split(/[/\\]/).slice(0, -1).join('/') 
     : '.';
 
