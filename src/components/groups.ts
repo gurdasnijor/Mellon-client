@@ -35,6 +35,7 @@ export function groupPorts(groupId: string, nodes: CustomNodeType[], edges: Edge
   const ins = new Map<string, Port>();
   const outs = new Map<string, Port>();
   for (const e of edges) {
+    if (byId.get(e.source)?.data.skipped) continue; // ours: drawn hidden (foldView)
     if (inside(e.target) && !inside(e.source)) {
       const source = byId.get(e.source);
       const from = foldedParent(source, byId) ?? source;
@@ -97,16 +98,23 @@ export function fitFrame(members: CustomNodeType[], sizes: Record<string, Size>)
   return { positions, width: x - GAP + GROUP_PAD, height: bottom + GROUP_PAD };
 }
 
-/** The nodes and wires as drawn: folded groups' members hidden, their wires on the cards' ports. */
+/**
+ * The nodes and wires as drawn: folded groups' members hidden, their wires on the cards' ports; a group whose members
+ * were all skipped (a lane past the plan's pieces), its members and the wires from skipped nodes hidden.
+ */
 export function foldView(nodes: CustomNodeType[], edges: Edge[]): { nodes: CustomNodeType[]; edges: Edge[] } {
   const byId = new Map(nodes.map(n => [n.id, n]));
-  if (!nodes.some(n => n.data.type === 'group' && n.data.collapsed)) return { nodes, edges };
+  const kept = new Set(nodes.filter(n => n.parentId && n.data.module && !n.data.skipped).map(n => n.parentId));
+  const gone = new Set(nodes.filter(n => n.parentId && n.data.module && !kept.has(n.parentId)).map(n => n.parentId));
+  if (!gone.size && !nodes.some(n => n.data.skipped || (n.data.type === 'group' && n.data.collapsed))) return { nodes, edges };
   return {
     nodes: nodes.map(n => {
+      if (gone.has(n.id) || gone.has(n.parentId ?? '')) return { ...n, hidden: true };
       if (n.data.type === 'group' && n.data.collapsed) return { ...n, width: cardWidth(n), height: undefined };
       return foldedParent(n, byId) ? { ...n, hidden: true } : n;
     }),
     edges: edges.map(e => {
+      if (byId.get(e.source)?.data.skipped) return { ...e, hidden: true };
       const from = foldedParent(byId.get(e.source), byId);
       const to = foldedParent(byId.get(e.target), byId);
       if (from && from === to) return { ...e, hidden: true };
