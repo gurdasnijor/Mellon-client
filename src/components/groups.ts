@@ -72,10 +72,12 @@ export function foldView(nodes: CustomNodeType[], edges: Edge[]): { nodes: Custo
 export function groupStatus(groupId: string, nodes: CustomNodeType[]) {
   const members = nodes.filter(n => n.parentId === groupId && n.data.module && n.data.action);
   const running = members.find(n => (n.data.progress ?? 0) !== 0);
+  const failed = members.find(n => n.data.failed);
   return {
     stored: members.filter(n => n.data.isCached).length,
     count: members.length,
     running: running ? { label: labelOf(running), progress: running.data.progress ?? 0 } : null,
+    failed: failed ? { label: labelOf(failed), error: failed.data.failed ?? '' } : null, // ours: the last run's failure
   };
 }
 

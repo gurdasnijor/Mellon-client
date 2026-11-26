@@ -51,7 +51,7 @@ useTaskStore.subscribe(soon);
  * results are another server's /cache); asked even when the graph is the one already open. */
 export function unstored(nodes: CustomNodeType[]) {
   recheck();
-  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false } }));
+  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false, failed: undefined } }));
 }
 
 /** Asks again though the graph is unchanged: the server's welcome has just set every node's isCached from its memory,

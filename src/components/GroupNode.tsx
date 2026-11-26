@@ -43,6 +43,8 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     else setTitle(node.data.label);
   };
   const running = status.running;
+  const failed = status.failed; // ours: the last run's, until the next
+  const tone = running ? 'info.main' : failed ? 'error.main' : status.stored === status.count ? 'success.main' : 'text.secondary';
 
   // the face: each member's pinned fields, in the order pinned, under the member's name; then the output node's result
   const pinned = node.data.pinned ?? [];
@@ -84,19 +86,19 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
           : <Typography sx={{ flexShrink: 0, maxWidth: '75%', fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               title="Double-click to rename" onDoubleClick={() => { setTitle(node.data.label); setEditing(true); }}>{node.data.label}</Typography>}
         {/* the status gives way to the title, which keeps its width up to three quarters of the header */}
-        <Typography data-key="group-status" title={`${status.stored} of ${status.count} stored`} sx={{
+        <Typography data-key="group-status" title={!running && failed ? `${failed.label} failed: ${failed.error}` : `${status.stored} of ${status.count} stored`} sx={{
           flexShrink: 1, minWidth: 0, ml: 'auto', overflow: 'hidden', textOverflow: 'ellipsis',
-          fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid',
-          borderColor: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary',
-          color: running ? 'info.main' : status.stored === status.count ? 'success.main' : 'text.secondary', whiteSpace: 'nowrap' }}>
+          fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid', borderColor: tone, color: tone, whiteSpace: 'nowrap' }}>
           {running
             ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
-            : `${status.stored}/${status.count} stored`}
+            : failed ? `failed · ${failed.label}` : `${status.stored}/${status.count} stored`}
         </Typography>
         <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
       </Box>
       {folded && (
         <Box sx={{ py: 1 }}>
+          {failed && !running && <Typography data-key="group-failed" sx={{ px: 1.5, pb: 1, fontSize: '20px', color: 'error.main', overflowWrap: 'anywhere' }}>
+            {failed.label} failed: {failed.error}</Typography>}
           {ins.map(p => (
             <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25 }}>
               <Handle type="target" position={Position.Left} id={p.id} isConnectable={false} />

@@ -15,6 +15,7 @@ export type NodeData = {
     memoryUsage?: Record<string, number>;
     isCached?: boolean;
     skipped?: boolean; // ours: the last run had nothing for it to do (the server's 'skipped')
+    failed?: string; // ours: why the node failed in the last run (the server's 'failed'), until the next run
     progress?: number;
     minimized?: boolean;
     headerColor?: string;

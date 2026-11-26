@@ -173,6 +173,13 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                         set({ loopTimer });
                     }
                     break;
+                case 'failed': { // ours: a node of the run failed, and why; the run goes on with the nodes that don't need it
+                    const failed = useFlowStore.getState().nodes.find(n => n.id === message.node);
+                    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => n.id === message.node ? { ...n, data: { ...n.data, failed: message.error, progress: 0 } } : n) }));
+                    const text = `${failed?.data.label || message.node} failed: ${message.error}`;
+                    enqueueSnackbar(text, { variant: 'error', autoHideDuration: Math.max(text.length * 80, 3000) });
+                    break;
+                }
                 case 'error':
                     console.error('Websocket error', message.error);
                     break;
@@ -200,6 +207,9 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                         return;
                     }
                     useTaskStore.getState().setTasks(message.current, message.queued);
+                    if (message.type === 'task_completed' && message.sid === sid) { // ours: a run over leaves no node running
+                        useFlowStore.getState().nodes.forEach(n => { if (n.data.progress) useFlowStore.getState().updateProgress(n.id, 0); });
+                    }
 
                     if (message.type === 'task_completed' && message.sid === sid && message.args) {
                         //const values = Array.isArray(message.args) ? message.args[0]?.values ?? '' : '';
