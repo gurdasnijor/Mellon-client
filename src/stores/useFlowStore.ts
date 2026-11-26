@@ -58,7 +58,7 @@ export type FlowStore = {
     fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => void;
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
-    updateCacheStatus: (ids: string | string[]) => void;
+    updateCacheStatus: (ids: string | string[], skipped?: string[]) => void;
     exportGraph: (sid: string, targetNodeId?: string, check?: boolean) => APIGraphExport;
     updateProgress: (id: string, progress: number) => void;
     resetStatus: (cachedIds: string | string[]) => void;
@@ -601,12 +601,12 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
 
-        updateCacheStatus: (ids: string | string[]) => {
+        updateCacheStatus: (ids: string | string[], skipped?: string[]) => {
             const cached = Array.isArray(ids) ? ids : [ids]
             // set all nodes in `cached` to true and all others to false
             set((state) => {
                 return {
-                    nodes: state.nodes.map(n => cached.includes(n.id) ? { ...n, data: { ...n.data, isCached: true } } : { ...n, data: { ...n.data, isCached: false } })
+                    nodes: state.nodes.map(n => ({ ...n, data: { ...n.data, isCached: cached.includes(n.id), ...(skipped ? { skipped: skipped.includes(n.id) } : {}) } })) // ours: skipped, the store check's
                 };
             });
         },
@@ -812,7 +812,8 @@ export const useFlowStore = create<FlowStore>()(
             set((state) => {
                 const node = state.nodes.find(n => n.id === id);
                 if (!node) return state;
-                return { nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, progress } } : n) };
+                // ours: a node running isn't skipped, whatever the last run did
+                return { nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, progress, ...(progress ? { skipped: false } : {}) } } : n) };
             });
         },
         resetStatus: (cachedIds: string | string[]) => {
