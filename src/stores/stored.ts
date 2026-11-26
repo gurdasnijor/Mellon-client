@@ -22,9 +22,12 @@ const shows = (n: CustomNodeType) => Object.values(n.data.params ?? {}).some(p =
 let sent = '';
 let keys: Record<string, string | null> = {}; // the last answer
 let timer: ReturnType<typeof setTimeout> | undefined;
+let attaching = false; // ours: a page opened mid-run asks once, though a task runs
 
 async function check() {
-  if (useTaskStore.getState().taskCount) return;
+  const during = attaching;
+  attaching = false;
+  if (useTaskStore.getState().taskCount && !during) return;
   const { sid } = useWebsocketStore.getState();
   const { nodes, paths } = useFlowStore.getState().exportGraph(sid ?? '', undefined, true);
   const body = JSON.stringify({ nodes });
@@ -35,6 +38,10 @@ async function check() {
     const response = await fetch(`${config.serverAddress}/stored`, { method: 'POST', body: JSON.stringify({ nodes, paths, sid, show }) });
     if (!response.ok) throw new Error(response.statusText);
     const answer: Record<string, string | null> = await response.json(); // each node's key if stored
+    if (during && body === sent) { // what the store holds so far, beside what the run's messages said meanwhile
+      const cached = useFlowStore.getState().nodes.filter(n => n.data.isCached).map(n => n.id);
+      return useFlowStore.getState().updateCacheStatus([...cached, ...Object.keys(answer).filter(id => answer[id])]);
+    }
     if (body !== sent || useTaskStore.getState().taskCount) return;
     const before = keys;
     keys = answer;
@@ -66,7 +73,16 @@ useTaskStore.subscribe(soon);
  * when the graph is the one already open. */
 export function unstored(nodes: CustomNodeType[]) {
   recheck();
-  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false, failed: undefined, progress: 0 } }));
+  return nodes.map(noResults).map(n => ({ ...n, data: { ...n.data, isCached: false, failed: undefined, skipped: false, progress: 0 } }));
+}
+
+/** A page opened or reconnected while a task runs: the server's memory isn't what the store holds, and the store check
+ * waits for no task, so what the store holds so far is asked once, and the run's messages say what it stores after. */
+export function attach() {
+  useFlowStore.getState().updateCacheStatus([]);
+  attaching = true;
+  sent = '';
+  soon();
 }
 
 /** Asks again though the graph is unchanged: the server's welcome has just set every node's isCached from its memory,

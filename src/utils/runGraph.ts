@@ -4,8 +4,8 @@ import { useFlowStore } from "../stores/useFlowStore";
 import { useSavedGraphStore } from "../stores/useSavedGraphStore";
 
 export const runGraph = async (sid: string, targetNodeId?: string) => {
-    // ours: a run clears the last one's failures
-    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => n.data.failed ? { ...n, data: { ...n.data, failed: undefined } } : n) }));
+    // ours: a run clears the last one's failures and skips
+    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => n.data.failed || n.data.skipped ? { ...n, data: { ...n.data, failed: undefined, skipped: false } } : n) }));
     const graph = useFlowStore.getState().exportGraph(sid, targetNodeId);
     // ours: the canvas as it was run and the saved graph it was opened from, so the server can keep a render as a graph
     const canvas = { ...graph, canvas: useFlowStore.getState().toObject(), saved: useSavedGraphStore.getState().renders };
