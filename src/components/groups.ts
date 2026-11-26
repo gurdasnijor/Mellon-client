@@ -9,7 +9,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 // sized to be read with the whole graph in view, as the cards stand in for nodes several times their size
 export const CARD_WIDTH = 600;
 export const GROUP_HEADER = 72;
-// a frame's padding around its members, and the gap a fitted member keeps from the one it was over
+// a frame's padding around its members, and the gap between them
 export const GROUP_PAD = 20;
 const GAP = 80;
 
@@ -73,32 +73,28 @@ export function pushRow(nodes: CustomNodeType[], group: CustomNodeType, dx: numb
 }
 
 /**
- * A frame fitted to what its members draw: in the order they're laid out, a member over one before it moves right of
- * it (under it, if they were laid out level), and the frame grows to hold them. Members draw previews at the size of what
- * they show (a 720p clip draws Clip 740 wide), so a frame laid out before a run can be short.
+ * A frame fitted to what its members draw: its columns (members at one x, as group.py lays them out) left to right and
+ * each column's members top to bottom, in the order they stand, GAP apart, and the frame just holding them. It runs as a
+ * group unfolds and as a member's size changes, so a frame fits before a run, and after it as results draw (a 720p clip
+ * draws Clip 740 wide); group.py's frames are only where it starts.
  */
 export function fitFrame(members: CustomNodeType[], sizes: Record<string, Size>) {
-  const placed: (Size & { x: number; y: number; column: number })[] = [];
-  const positions: Record<string, { x: number; y: number }> = {};
+  const columns = new Map<number, CustomNodeType[]>();
   for (const m of [...members].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)) {
-    const at = { ...m.position, ...sizes[m.id], column: m.position.x };
-    for (let moved = true; moved;) {
-      moved = false;
-      for (const p of placed) {
-        if (at.x < p.x + p.width && p.x < at.x + at.width && at.y < p.y + p.height && p.y < at.y + at.height) {
-          if (p.column < at.column) at.x = p.x + p.width + GAP; else at.y = p.y + p.height + GAP;
-          moved = true;
-        }
-      }
-    }
-    placed.push(at);
-    positions[m.id] = { x: at.x, y: at.y };
+    columns.set(m.position.x, [...(columns.get(m.position.x) ?? []), m]);
   }
-  return {
-    positions,
-    width: Math.max(...placed.map(p => p.x + p.width)) + GROUP_PAD,
-    height: Math.max(...placed.map(p => p.y + p.height)) + GROUP_PAD,
-  };
+  const positions: Record<string, { x: number; y: number }> = {};
+  let x = GROUP_PAD, bottom = 0;
+  for (const column of columns.values()) {
+    let y = GROUP_HEADER + GROUP_PAD;
+    for (const m of column) {
+      positions[m.id] = { x, y };
+      y += sizes[m.id].height + GAP;
+    }
+    bottom = Math.max(bottom, y - GAP);
+    x += Math.max(...column.map(m => sizes[m.id].width)) + GAP;
+  }
+  return { positions, width: x - GAP + GROUP_PAD, height: bottom + GROUP_PAD };
 }
 
 /** The nodes and wires as drawn: folded groups' members hidden, their wires on the cards' ports. */

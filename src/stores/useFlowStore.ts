@@ -556,17 +556,20 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
         setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => {
+            const fold = 'collapsed' in data; // ours: folding shows the graph another way, no undo step
+            if (fold) useFlowStore.temporal.getState().pause();
             set((state) => {
                 const group = state.nodes.find(n => n.id === id);
                 if (!group) return state;
                 // unfolding draws the frame where the card was: the row to its right moves along, and back on folding
-                const turned = 'collapsed' in data && !!data.collapsed !== !!group.data.collapsed;
+                const turned = fold && !!data.collapsed !== !!group.data.collapsed;
                 const dx = turned ? pastCard(group) * (data.collapsed ? -1 : 1) : 0;
                 return { nodes: pushRow(state.nodes, group, dx).map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n) };
             });
+            if (fold) useFlowStore.temporal.getState().resume();
         },
-        // an unfolded group's members moved off one another and its frame grown to hold them, as they draw (`sizes`),
-        // the row to its right moving along by what it grew
+        // an unfolded group's members laid out and its frame fitted to them as they draw (`sizes`), the row to its right
+        // moving along by what the frame's width changed
         fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => {
             useFlowStore.temporal.getState().pause(); // part of the unfold it follows, not a step of its own
             set((state) => {
@@ -574,7 +577,7 @@ export const useFlowStore = create<FlowStore>()(
                 const members = state.nodes.filter(n => n.parentId === id && sizes[n.id]);
                 if (!group || group.data.collapsed || !members.length) return state;
                 const fit = fitFrame(members, sizes);
-                const width = Math.max(group.width ?? 0, fit.width), height = Math.max(group.height ?? 0, fit.height);
+                const { width, height } = fit;
                 const moved = members.some(m => fit.positions[m.id].x !== m.position.x || fit.positions[m.id].y !== m.position.y);
                 if (!moved && width === group.width && height === group.height) return state;
                 return {

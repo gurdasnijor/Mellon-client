@@ -47,6 +47,11 @@ export default function FileBrowserField(props: FieldProps) {
   const fieldValue = (props.fieldOptions?.multiple && allowImages && props.value && !props.value.includes('') ? [...props.value, ''] : props.value) || [''];
   const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
+  // ours: a stored file is numbered only where its name is another's: a Library pick's files all show its entry's
+  // name (sha256:<hex>), an upload its own (sha256:<hex>/<name>)
+  const ownName = (file: string) => file.split('/')[1];
+  const sameName = (file: string) => file.startsWith('sha256:') &&
+    fieldValue.filter((f: string) => f.startsWith('sha256:') && ownName(f) === ownName(file)).length > 1;
 
   // The file's path on the server once uploaded; the field is updated once for all of a pick or a drop (addFiles), since
   // props.value is the field's value from before them
@@ -162,7 +167,7 @@ export default function FileBrowserField(props: FieldProps) {
                 key={index}
                 {...props}
                 value={file}
-                part={fieldValue.length > 1 ? index + 1 : undefined}
+                part={sameName(file) ? index + 1 : undefined}
                 updateStore={(_, file) => updateArrayValues(file, index)}
                 clear={() => updateArrayValues('', index)}
               />
