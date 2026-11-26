@@ -144,9 +144,12 @@ export function pinnable(node: Pick<CustomNodeType, 'data'>): string[] {
     .map(([key]) => key);
 }
 
+/** Whether a field shows what its node made: a ui_ field but a node's button and a group's frame. */
+export const isResult = (p: { display?: string }) => String(p.display ?? '').startsWith('ui_') && !['ui_button', 'ui_group'].includes(p.display ?? '');
+
 /** A node's result: the fields it shows what it made in. */
 export const results = (node: Pick<CustomNodeType, 'data'>) =>
-  Object.entries(node.data.params ?? {}).filter(([, p]) => !p.hidden && String(p.display ?? '').startsWith('ui_') && p.display !== 'ui_group').map(([key]) => key);
+  Object.entries(node.data.params ?? {}).filter(([, p]) => !p.hidden && isResult(p)).map(([key]) => key);
 
 /**
  * A new group's face: its input node is the first member no other member feeds, with its editable fields pinned; its

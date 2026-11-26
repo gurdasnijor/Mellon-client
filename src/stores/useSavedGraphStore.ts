@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Edge } from "@xyflow/react";
 import { CustomNodeType, useFlowStore } from "./useFlowStore";
+import { isResult } from "../components/groups";
 
 // ours: the saved graph the canvas was opened from (a store: path from /listgraphs) and its ETag, so that Save
 // writes over it only as it was opened; null for a new graph, an example or a dropped file. Its renders file under
@@ -17,15 +18,12 @@ type SavedGraphStore = {
     setSaved: (path: string | null, etag: string | null, renders?: string | null, opened?: string) => void;
 };
 
-// a field showing what a node made, a run's result: not work
-const result = (display?: string) => display === 'output' || (String(display ?? '').startsWith('ui_') && !['ui_button', 'ui_group'].includes(display ?? ''));
-
 /** The work in a canvas, what replacing it would lose: each node's params as a run would send them (a seed the wand
  * rolls each run as "random", so a run rolling it is no edit, and one it doesn't as its number), the links, and the
  * groups' names and members. Not results, run status, where nodes sit or the view. */
 export function work(nodes: CustomNodeType[], edges: Edge[]) {
     const params = (n: CustomNodeType) => Object.fromEntries(Object.entries(n.data.params ?? {})
-        .filter(([, p]) => !result(p.display))
+        .filter(([, p]) => p.display !== 'output' && !isResult(p))
         .map(([k, p]) => [k, p.display !== 'random' || typeof p.value !== 'object' || !p.value ? p.value ?? null
             : p.value.isRandom ? 'random' : p.value.value]));
     return JSON.stringify({

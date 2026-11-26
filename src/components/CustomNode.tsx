@@ -188,6 +188,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {label}
         </Box>
         <Box className="nodrag">
+          {/* ours: show the result on the folded group, and Run to here */}
           {hasResult && <IconButton size="small" title={isOutput ? "Shown on the folded group: click to hide" : "Show this node's result on the folded group"}
             onClick={() => setGroupData(group!.id, { outputNode: isOutput ? undefined : node.id })}
             sx={{ color: isOutput ? 'warning.main' : 'inherit' }}><OutputIcon sx={{ fontSize: '18px' }} /></IconButton>}
@@ -238,7 +239,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           },
       }}>
         <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} pins={pins} />
+          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} pins={pins} /* ours */ />
         </ErrorBoundary>
       </Box>
 
@@ -276,6 +277,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             className="nodrag"
             sx={{ p: 0.5 }}
             disabled={!node.data.isCached}
+            // ours: skipped
             title={node.data.skipped ? 'Skipped: nothing to do in this run' : node.data.isCached ? 'Click to clear cache' : 'Not cached'}
             onClick={handleClearCache}
           >
@@ -418,7 +420,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   if (prev.data.memoryUsage?.last !== next.data.memoryUsage?.last) {
     return false;
   }
-  if (prev.data.isCached !== next.data.isCached || prev.data.skipped !== next.data.skipped) {
+  if (prev.data.isCached !== next.data.isCached || prev.data.skipped !== next.data.skipped) { // ours: skipped
     return false;
   }
   if (prev.data.progress !== next.data.progress) {

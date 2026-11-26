@@ -68,7 +68,7 @@ function Workflow() {
   const removeEdges = useFlowStore(state => state.removeEdges);
   const setParam = useFlowStore(state => state.setParam);
   const updateViewportStore = useFlowStore(state => state.setViewport);
-  const groupNodes = useFlowStore(state => state.groupNodes);
+  const groupNodes = useFlowStore(state => state.groupNodes); // ours
   const updateNodeInternals = useUpdateNodeInternals();
 
   const {
@@ -86,7 +86,7 @@ function Workflow() {
   } = useSettingsStore();
 
   const { screenToFlowPosition } = useReactFlow();
-  const { open, show } = useOpenGraph();
+  const { open, show } = useOpenGraph(); // ours: opening a graph is openGraph.ts's
 
   const [anchorPosition, setAnchorPosition] = useState<{ top: number, left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -465,7 +465,7 @@ function Workflow() {
 
       const reader = new FileReader();
       reader.onload = (e) => {
-        show(JSON.parse(e.target?.result as string));
+        show(JSON.parse(e.target?.result as string)); // ours: openGraph.ts
       }
       reader.readAsText(file);
       return;
@@ -479,7 +479,7 @@ function Workflow() {
 
     // if data ends with .json, it's a graph file
     if (data.endsWith('.json')) {
-      open(data);
+      open(data); // ours: openGraph.ts
       return;
     }
 
@@ -574,7 +574,7 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
-        onBeforeDelete={confirmDelete}
+        onBeforeDelete={confirmDelete} // ours: a group's deletion asks first
         proOptions={{ hideAttribution: true }}
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
@@ -660,6 +660,7 @@ function Workflow() {
       {alertOpener && (
         <AlertDialog
           opener={alertOpener}
+          // ours: closed, the deletion asked about is not made
           onClose={() => { deciding.current?.(false); deciding.current = null; setAlertOpener(null); }}
         />
       )}

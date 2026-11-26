@@ -1,7 +1,7 @@
 import { useFlowStore } from '../stores/useFlowStore';
 
 /**
- * What a linked input shows: the value of the linking node's preview of the output linked in (a ui field whose
+ * Ours: what a linked input shows: the value of the linking node's preview of the output linked in (a ui field whose
  * `dataSource` is that output), or undefined while the input is unlinked or its node hasn't run.
  */
 export function useLinked(nodeId: string | undefined, key: string | undefined, display: string): unknown {

@@ -192,13 +192,13 @@ const NodeContent = ({
         return (
           <GroupMemo key={key} {...props}>
             {group.children.map(({ key: childKey, props: childProps }) => (
-              <Pinned key={childKey} fieldKey={childKey} pins={pins}><FieldMemo {...childProps} /></Pinned>
+              <Pinned key={childKey} fieldKey={childKey} pins={pins}><FieldMemo {...childProps} /></Pinned> /* ours: pins */
             ))}
           </GroupMemo>
         );
       }
       // This is a regular field
-      return <Pinned key={key} fieldKey={key} pins={pins}><FieldMemo {...props} /></Pinned>;
+      return <Pinned key={key} fieldKey={key} pins={pins}><FieldMemo {...props} /></Pinned>; // ours: pins
     });
 
   return orderedFields;

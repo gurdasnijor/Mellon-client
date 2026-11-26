@@ -2,6 +2,7 @@ import config from '../../app.config';
 import { CustomNodeType, useFlowStore } from './useFlowStore';
 import { useTaskStore } from './useTaskStore';
 import { useWebsocketStore } from './useWebsocketStore';
+import { isResult } from '../components/groups';
 
 // ours: the canvas shows what the store holds, never what a saved graph says. When the exported graph changes (a graph
 // opened from the list, by Open or the Gallery's Open, or an edit that can move a key) and no task is running, its
@@ -9,15 +10,12 @@ import { useWebsocketStore } from './useWebsocketStore';
 // is set from the answer. One asked while a run started is dropped: the run's messages say what it stores. The nodes
 // showing no result yet are sent as show: the stored ones among them draw their results from the store, running nothing.
 
-// a field showing what a node made (a ui_ field but a node's button and a group's frame)
-const result = (p: { display?: string }) => String(p.display ?? '').startsWith('ui_') && !['ui_button', 'ui_group'].includes(p.display ?? '');
-
 // a node as it was before any run, its results cleared
 const noResults = (n: CustomNodeType) => !n.data.params ? n : { ...n, data: { ...n.data, params: Object.fromEntries(
-  Object.entries(n.data.params).map(([k, p]) => [k, result(p) ? { ...p, value: undefined } : p])) } };
+  Object.entries(n.data.params).map(([k, p]) => [k, isResult(p) ? { ...p, value: undefined } : p])) } };
 
 // whether a node shows a result
-const shows = (n: CustomNodeType) => Object.values(n.data.params ?? {}).some(p => result(p) && (Array.isArray(p.value) ? p.value.length : p.value));
+const shows = (n: CustomNodeType) => Object.values(n.data.params ?? {}).some(p => isResult(p) && (Array.isArray(p.value) ? p.value.length : p.value));
 
 let sent = '';
 let keys: Record<string, string | null> = {}; // the last answer

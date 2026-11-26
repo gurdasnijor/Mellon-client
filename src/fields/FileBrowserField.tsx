@@ -11,8 +11,6 @@ import config from "../../app.config";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import InputField from "./InputField";
 import IconButton from "@mui/material/IconButton";
-import { useFlowStore } from "../stores/useFlowStore";
-import { useStoredName } from "../utils/storedName";
 
 export default function FileBrowserField(props: FieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,8 +45,7 @@ export default function FileBrowserField(props: FieldProps) {
   const fieldValue = (props.fieldOptions?.multiple && allowImages && props.value && !props.value.includes('') ? [...props.value, ''] : props.value) || [''];
   const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
-  // ours: a stored file is numbered only where its name is another's: a Library pick's files all show its entry's
-  // name (sha256:<hex>), an upload its own (sha256:<hex>/<name>)
+  // ours: a stored file (sha256:<hex>/<name>) shows its own name, numbered only where another in the field has it
   const ownName = (file: string) => file.split('/')[1];
   const sameName = (file: string) => file.startsWith('sha256:') &&
     fieldValue.filter((f: string) => f.startsWith('sha256:') && ownName(f) === ownName(file)).length > 1;
@@ -77,8 +74,8 @@ export default function FileBrowserField(props: FieldProps) {
     return [];
   }
 
-  // Every image of a pick or a drop, added to the field's own if it takes several; else the first file, a video
-  // always alone
+  // ours: every image of a pick or a drop, uploaded and then added at once, sorted, to the field's own if it takes
+  // several; else the first file, a video always alone (uploadFile returns its paths rather than setting the field)
   async function addFiles(picked: File[]) {
     const files = picked.filter(file =>
       (allowImages && file.type.startsWith('image/')) ||
@@ -163,6 +160,7 @@ export default function FileBrowserField(props: FieldProps) {
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.5 }}>
           { isTextFieldEditable ? (
             fieldValue.map((file: string, index: number) => (
+              // ours: a stored file shows its name, with an X to clear it
               <FileInput
                 key={index}
                 {...props}
@@ -306,11 +304,10 @@ export default function FileBrowserField(props: FieldProps) {
   );
 }
 
-// ours: a file named by its content (a Library pick's sha256:<hex>) shows its library entry's name (numbered among
-// several), not to be typed over: its X clears it, as deleting its text would
+// ours: a file in the store (sha256:<hex>/<name>: an upload, or a file a Library pick wrote) shows its own name
+// (numbered where another has it), not to be typed over: its X clears it, as deleting its text would
 function FileInput({ part, clear, ...props }: FieldProps & { part?: number; clear: () => void }) {
-  const folder: string | undefined = useFlowStore(s => s.nodes.find(n => n.id === props.nodeId)?.data.params.repo_id?.value);
-  const name = useStoredName(props.value, folder);
+  const name = typeof props.value === 'string' && props.value.startsWith('sha256:') ? props.value.split('/')[1] : undefined;
   if (!name) return <InputField {...props} />;
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'background.default', px: 1, py: 0.5, borderRadius: 0.5 }} title={props.value}>

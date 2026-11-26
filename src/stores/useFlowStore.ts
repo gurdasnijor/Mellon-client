@@ -19,7 +19,7 @@ import {
 } from '@xyflow/react'
 
 import config from '../../app.config'
-import { defaultFace, fitFrame, GROUP_HEADER, GROUP_PAD, pastCard, pushRow } from '../components/groups'
+import { defaultFace, fitFrame, GROUP_HEADER, GROUP_PAD, isResult, pastCard, pushRow } from '../components/groups'
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>
 export interface CustomConnection extends Connection {
@@ -51,6 +51,7 @@ export type FlowStore = {
     updateHandleConnectionStatus: () => void;
     updateSignalValues: (edges: Edge | Edge[]) => void;
     getSignalValue: (id: string, param: string) => any;
+    // ours: groups (groups.ts), skipped nodes, the store check's export
     groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => string | null;
     ungroupNodes: (id: string) => void;
     setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed' | 'outputNode' | 'pinned'>>) => void;
@@ -92,7 +93,6 @@ type APIGraphExport = {
 // results, selection and drawn size are left out (and an undo keeps the live ones: the store check answers for a node
 // whose key it moves). Edits less than half a second apart are one step (a drag, typing in a field)
 const RUN_STATE = ['isCached', 'skipped', 'failed', 'progress', 'memoryUsage', 'executionTime'] as const;
-const isResult = (p: NodeParams) => String(p.display ?? '').startsWith('ui_') && !['ui_button', 'ui_group'].includes(String(p.display));
 const graphOf = (state: Pick<FlowStore, 'nodes' | 'edges'>) => ({
     edges: state.edges.map(e => ({ ...e, selected: undefined })),
     nodes: state.nodes.map(n => ({ ...n, selected: undefined, dragging: undefined, measured: undefined, data: {
@@ -611,7 +611,7 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
 
-        exportGraph: (sid: string, targetNodeId?: string, check = false) => {
+        exportGraph: (sid: string, targetNodeId?: string, check = false) => { // ours: check, for the store check (stored.ts)
             const { nodes, edges } = get();
             const sessionId = sid || '';
             
@@ -843,7 +843,7 @@ export const useFlowStore = create<FlowStore>()(
                 viewport: get().viewport
             };
         }
-    }), HISTORY),
+    }), HISTORY), // ours: undo
     {
         name: "reactflow",
         storage: createJSONStorage(() => localStorage),

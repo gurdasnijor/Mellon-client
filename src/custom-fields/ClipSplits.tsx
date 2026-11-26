@@ -11,7 +11,7 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { useLinked } from './useLinked';
 
 /**
- * Split marks on a selection's track (`display: "custom.ClipSplits"`), for a str param holding the pieces' ends but
+ * Ours: split marks on a selection's track (`display: "custom.ClipSplits"`), for a str param holding the pieces' ends but
  * the last as JSON `[frame, …]` from the selection's first frame, or empty for the node to choose. The selection is
  * the one linked into `fieldOptions.selection`: the linking node's `first_frame` and `frames` (0: to the clip's end),
  * the clip its `fieldOptions.clip` input plays and the cuts its `fieldOptions.cuts` input shows, as ClipRange draws

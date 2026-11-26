@@ -10,11 +10,10 @@ import { enqueueSnackbar } from 'notistack';
 import config from '../../app.config';
 import { FieldProps } from '../components/NodeContent';
 import { useFlowStore } from '../stores/useFlowStore';
-import { remember } from '../utils/storedName';
 
 type Entry = { key: string; name: string; modified: number | null; params: Record<string, unknown> };
 
-// The node's folder's library: the nodes of this folder stored before, newest first, from /listdir?path=store:<folder>.
+// ours: the node's folder's library: the nodes of this folder stored before, newest first, from /listdir?path=store:<folder>.
 // Picking one writes its params into this node, so the node has that node's key and is read from the store, with
 // everything below it. It writes only params this node has, and never its own field. It says which fields it
 // changed, so a value it replaces (a pasted link, where the stored node had none) isn't lost unseen.
@@ -41,7 +40,6 @@ export default function Library(props: FieldProps) {
     const changed: string[] = [];
     for (const [name, value] of Object.entries(entry.params)) {
       if (name !== props.fieldKey && params && name in params) {
-        remember(value, entry.name);
         if (JSON.stringify(params[name].value ?? '') !== JSON.stringify(value ?? '')) changed.push(params[name].label || name);
         props.updateStore(name, value);
       }

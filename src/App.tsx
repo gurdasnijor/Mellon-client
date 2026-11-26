@@ -216,7 +216,7 @@ export default function App() {
               width: isRightPanelOpen ? `${rightPanelWidth}px` : '0px'
             }}
           >
-            {isRightPanelOpen && <Gallery />}
+            {isRightPanelOpen && <Gallery />/* ours: upstream's Gallery (TODO) */}
             
             {/* Resize handle */}
             <Box

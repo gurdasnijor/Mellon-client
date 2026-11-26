@@ -12,7 +12,7 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { useLinked } from './useLinked';
 
 /**
- * A video file field with in and out marks (`display: "custom.ClipRange"`). It picks the clip as the file browser
+ * Ours: a video file field with in and out marks (`display: "custom.ClipRange"`). It picks the clip as the file browser
  * does, and writes the selection to two int params of the same node, in frames at `fieldOptions.fps`:
  * `fieldOptions.firstFrame` (default `first_frame`), the in mark, and `fieldOptions.frames` (default `frames`), the
  * marks' distance, or 0 when the out mark is the clip's end.
