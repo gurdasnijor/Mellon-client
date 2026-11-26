@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 
 import config from '../../app.config';
 
-// ours: a file a Library pick wrote is named by its content (sha256:<hex>), which says nothing to the user; the File
-// field shows the name of the folder's library entry holding it instead. Picks remember theirs; another (a graph
-// saved with one, a reload) is looked up in the folder's library once per folder and page.
+// ours: a file in the store is named by its content and its own name (sha256:<hex>/<name>: an upload, or a file a
+// Library pick wrote), and shows as that name. One named by its content alone (sha256:<hex>, a library entry written
+// before names were kept) shows the name of the folder's library entry holding it: picks remember theirs; another (a
+// graph saved with one, a reload) is looked up in the folder's library once per folder and page.
 const names = new Map<string, string>();
 const looked = new Map<string, Promise<void>>();
 
@@ -25,13 +26,15 @@ function lookUp(folder: string) {
     return looked.get(folder)!;
 }
 
-/** The library name of a file named by its content, once known; undefined for any other value. */
+/** A file in the store's own name, or for one named by its content alone its library name once known; undefined for
+ * any other value. */
 export function useStoredName(value: unknown, folder: string | undefined) {
-    const stored = typeof value === 'string' && value.startsWith('sha256:') ? value : undefined;
+    const own = typeof value === 'string' && value.startsWith('sha256:') ? value.split('/')[1] : undefined;
+    const stored = typeof value === 'string' && value.startsWith('sha256:') && !own ? value : undefined;
     const [name, setName] = useState(stored && names.get(stored));
     useEffect(() => {
         setName(stored && names.get(stored));
         if (stored && !names.has(stored) && folder) lookUp(folder).then(() => setName(names.get(stored)));
     }, [stored, folder]);
-    return name;
+    return own ?? name;
 }
