@@ -2,6 +2,7 @@ import { memo, useEffect, useState } from 'react';
 import { Handle, NodeProps, Position, useUpdateNodeInternals } from '@xyflow/react';
 
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import Typography from '@mui/material/Typography';
@@ -17,7 +18,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { runGraph } from '../utils/runGraph';
-import { drawnSize, GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
+import { drawnSize, GROUP_HEADER, groupPorts, groupStatus, isResult, results } from './groups';
 import NodeContent from './NodeContent';
 import ErrorBoundary from './ErrorBoundary';
 
@@ -76,6 +77,8 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     return members.filter(m => !s.edges.some(e => e.source === m.id && inside.has(e.target))).map(m => m.id);
   }));
   const endLabels = members.filter(m => ends.includes(m.id)).map(m => m.data.label).join(' and ');
+  const labels = (ids: string[]) => members.filter(m => ids.includes(m.id)).map(m => m.data.label).join(' and ');
+  const run = (to: string[]) => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, to); };
   // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px.
   // On a card a video is at most 480 px tall (a portrait clip drawn at the card's width is about 1,000), and text wraps
   // rather than scrolling sideways. A card made wider for its result (Assemble's) shows it whole, at the card's width.
@@ -119,9 +122,13 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
             : failed ? `failed · ${failed.label}` : status.skipped ? 'skipped' : `${status.stored}/${status.count} stored`}
         </Typography>
         {/* Run to here for the card: runs its ends and what they read, as a node's header does for one node */}
-        {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${endLabels || 'the output'})`}
-          disabled={!isConnected || !!running} onClick={() => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, ends.length ? ends : node.data.outputNode); }}>
-          <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>}
+        {/* or the card's runs, each named (a piece's Prompt, up to what runs here, then Render) */}
+        {node.data.runs?.map(r => { const to = r.to ?? ends; return (
+          <Button key={r.label} className="nodrag" size="small" variant="outlined" startIcon={<PlayArrowIcon />} title={`${r.label}: run to ${labels(to)}`}
+            disabled={!isConnected || !!running || !to.length} onClick={() => run(to)} sx={{ flexShrink: 0, fontSize: '18px', py: 0 }}>{r.label}</Button>); })
+          ?? (node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${endLabels || 'the output'})`}
+          disabled={!isConnected || !!running} onClick={() => run(ends.length ? ends : [node.data.outputNode!])}>
+          <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>)}
         {/* a frame's members ungroup where they draw; a card's aren't laid out until it unfolds */}
         {!folded && <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>}
       </Box>
@@ -137,7 +144,7 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
           ))}
           {(faces.length > 0 || output) && (
             <Box className="nodrag nowheel" sx={{ my: 1, pt: 1, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider' }}>
-              {faces.map(({ m, fields }) => face(m, fields, m.data.label))}
+              {faces.map(({ m, fields }) => face(m, fields, m.data.label, fields.every(f => isResult(m.data.params[f]))))}
               {output && results(output).length > 0 && face(output, results(output), `Result · ${output.data.label}`, true)}
             </Box>
           )}

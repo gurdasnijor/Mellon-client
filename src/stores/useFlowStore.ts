@@ -509,6 +509,7 @@ export const useFlowStore = create<FlowStore>()(
                         outputNode: was.outputNode && members.has(was.outputNode) ? was.outputNode : face.outputNode,
                         pinned: (was.pinned ?? []).filter(p => members.has(p.node)),
                         cardWidth: was.cardWidth,
+                        runs: was.runs?.map(r => r.to ? { ...r, to: r.to.filter(m => members.has(m)) } : r),
                     } : {}),
                 },
                 position: {
@@ -534,13 +535,13 @@ export const useFlowStore = create<FlowStore>()(
                 const group = state.nodes.find(n => n.id === id);
                 if (!group) return state;
                 // unfolded (only a frame has Ungroup), so its members are laid out where they draw
-                const { label, inputNode, outputNode, pinned, cardWidth: width } = group.data;
+                const { label, inputNode, outputNode, pinned, cardWidth: width, runs } = group.data;
                 return {
                     nodes: state.nodes.filter(n => n.id !== id).map(n => {
                         if (n.parentId !== id) return n;
                         const member = {
                             ...n,
-                            data: { ...n.data, ungrouped: { label, inputNode, outputNode, pinned, cardWidth: width } },
+                            data: { ...n.data, ungrouped: { label, inputNode, outputNode, pinned, cardWidth: width, runs } },
                             position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y },
                         };
                         delete member.parentId;
