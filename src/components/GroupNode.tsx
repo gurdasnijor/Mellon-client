@@ -16,7 +16,7 @@ import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { runGraph } from '../utils/runGraph';
-import { GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
+import { drawnSize, GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
 import NodeContent from './NodeContent';
 import ErrorBoundary from './ErrorBoundary';
 
@@ -41,6 +41,15 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
   const { sid, isConnected } = useWebsocketStore();
 
   useEffect(() => updateNodeInternals(node.id), [node.id, folded, portsJson, updateNodeInternals]);
+  // unfolded, the frame fits what its members draw, once they have drawn and again as a preview loads and resizes one
+  const fitGroup = useFlowStore(s => s.fitGroup);
+  const drawn = useFlowStore(s => folded ? '' : JSON.stringify(s.nodes.filter(n => n.parentId === node.id).map(n => [n.id, n.measured])));
+  useEffect(() => {
+    if (!drawn) return;
+    const frame = requestAnimationFrame(() => fitGroup(node.id, Object.fromEntries(
+      (JSON.parse(drawn) as [string][]).flatMap(([id]) => { const size = drawnSize(id); return size ? [[id, size]] : []; }))));
+    return () => cancelAnimationFrame(frame);
+  }, [node.id, drawn, fitGroup]);
 
   const rename = () => {
     setEditing(false);
@@ -60,13 +69,14 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
   const output = members.find(m => m.id === node.data.outputNode);
   // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px.
   // On a card a video is at most 480 px tall (a portrait clip drawn at the card's width is about 1,000), and text wraps
-  // rather than scrolling sideways.
+  // rather than scrolling sideways. A card made wider for its result (Assemble's) shows it whole, at the card's width.
+  const whole = !!node.data.cardWidth;
   const face = (m: CustomNodeType, only: string[], title: string, result = false) => (
     <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
       <Typography sx={{ fontSize: '18px', color: 'warning.main', mb: 0.5 }}>{title}</Typography>
       <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
-        <Box sx={{ zoom: 1.4, '& video': { maxHeight: 480 / 1.4 }, '& pre': { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
-          ...(result ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
+        <Box sx={{ zoom: 1.4, '& video': whole ? { width: '100%' } : { maxHeight: 480 / 1.4 }, '& pre': { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+          ...(result && !whole ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
         <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
           module={m.data.module || ''} action={m.data.action || ''} />
         </Box>

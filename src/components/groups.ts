@@ -9,6 +9,9 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 // sized to be read with the whole graph in view, as the cards stand in for nodes several times their size
 export const CARD_WIDTH = 600;
 export const GROUP_HEADER = 72;
+// a frame's padding around its members, and the gap a fitted member keeps from the one it was over
+export const GROUP_PAD = 20;
+const GAP = 80;
 
 export type Port = { id: string; label: string };
 
@@ -45,13 +48,66 @@ export function groupPorts(groupId: string, nodes: CustomNodeType[], edges: Edge
   return { ins: [...ins.values()], outs: [...outs.values()] };
 }
 
+export const cardWidth = (group: Pick<CustomNodeType, 'data'>) => group.data.cardWidth ?? CARD_WIDTH;
+/** How far an unfolded group's frame reaches past its card: what the row to its right moves along by. */
+export const pastCard = (group: Pick<CustomNodeType, 'data' | 'width'>) => Math.max(0, (group.width ?? 0) - cardWidth(group));
+
+type Size = { width: number; height: number };
+
+/** What a node draws, previews included, which can reach past its measured box; nothing for a node not drawn. */
+export function drawnSize(id: string): Size | undefined {
+  const el = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`);
+  return el ? { width: el.scrollWidth, height: el.scrollHeight } : undefined;
+}
+
+/**
+ * The top-level nodes beside a group, to its right, moved `dx` along: a group unfolds (and ungroups) in place, so the
+ * nodes its frame would cover move right by what the frame draws past its card, and back when it folds.
+ */
+export function pushRow(nodes: CustomNodeType[], group: CustomNodeType, dx: number, members = new Set<string>()): CustomNodeType[] {
+  if (!dx) return nodes;
+  const top = group.position.y, bottom = top + (group.height ?? 0);
+  return nodes.map(n => !n.parentId && n.id !== group.id && !members.has(n.id) && n.position.x > group.position.x
+    && n.position.y < bottom && n.position.y + (n.measured?.height ?? 0) >= top
+    ? { ...n, position: { x: n.position.x + dx, y: n.position.y } } : n);
+}
+
+/**
+ * A frame fitted to what its members draw: in the order they're laid out, a member over one before it moves right of
+ * it (under it, if they were laid out level), and the frame grows to hold them. Members draw previews at the size of what
+ * they show (a 720p clip draws Clip 740 wide), so a frame laid out before a run can be short.
+ */
+export function fitFrame(members: CustomNodeType[], sizes: Record<string, Size>) {
+  const placed: (Size & { x: number; y: number; column: number })[] = [];
+  const positions: Record<string, { x: number; y: number }> = {};
+  for (const m of [...members].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)) {
+    const at = { ...m.position, ...sizes[m.id], column: m.position.x };
+    for (let moved = true; moved;) {
+      moved = false;
+      for (const p of placed) {
+        if (at.x < p.x + p.width && p.x < at.x + at.width && at.y < p.y + p.height && p.y < at.y + at.height) {
+          if (p.column < at.column) at.x = p.x + p.width + GAP; else at.y = p.y + p.height + GAP;
+          moved = true;
+        }
+      }
+    }
+    placed.push(at);
+    positions[m.id] = { x: at.x, y: at.y };
+  }
+  return {
+    positions,
+    width: Math.max(...placed.map(p => p.x + p.width)) + GROUP_PAD,
+    height: Math.max(...placed.map(p => p.y + p.height)) + GROUP_PAD,
+  };
+}
+
 /** The nodes and wires as drawn: folded groups' members hidden, their wires on the cards' ports. */
 export function foldView(nodes: CustomNodeType[], edges: Edge[]): { nodes: CustomNodeType[]; edges: Edge[] } {
   const byId = new Map(nodes.map(n => [n.id, n]));
   if (!nodes.some(n => n.data.type === 'group' && n.data.collapsed)) return { nodes, edges };
   return {
     nodes: nodes.map(n => {
-      if (n.data.type === 'group' && n.data.collapsed) return { ...n, width: CARD_WIDTH, height: undefined };
+      if (n.data.type === 'group' && n.data.collapsed) return { ...n, width: cardWidth(n), height: undefined };
       return foldedParent(n, byId) ? { ...n, hidden: true } : n;
     }),
     edges: edges.map(e => {

@@ -23,6 +23,10 @@ export type NodeData = {
     inputNode?: string; // ours: the member whose editable fields a new group pins
     outputNode?: string; // ours: the member whose result a folded group shows
     pinned?: { node: string; field: string }[]; // ours: members' fields a folded group shows, editing them there
+    cardWidth?: number; // ours: a folded group's card width when not CARD_WIDTH, a card made for its result (Assemble's)
+    // ours: on a node ungrouped, the face of the group it was in, which grouping its members again restores, and how far
+    // the row to its right moved along when it was ungrouped folded
+    ungrouped?: Pick<NodeData, 'label' | 'collapsed' | 'inputNode' | 'outputNode' | 'pinned' | 'cardWidth'> & { pushed: number };
 }
 
 export type NodeParams = {

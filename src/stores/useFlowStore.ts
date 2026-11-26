@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react'
 
 import config from '../../app.config'
-import { defaultFace, GROUP_HEADER } from '../components/groups'
+import { defaultFace, fitFrame, GROUP_HEADER, GROUP_PAD, pastCard, pushRow } from '../components/groups'
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>
 export interface CustomConnection extends Connection {
@@ -53,6 +53,7 @@ export type FlowStore = {
     groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => string | null;
     ungroupNodes: (id: string) => void;
     setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed' | 'outputNode' | 'pinned'>>) => void;
+    fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => void;
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
     updateCacheStatus: (ids: string | string[]) => void;
@@ -452,12 +453,16 @@ export const useFlowStore = create<FlowStore>()(
         },
         // ours: a group of nodes not in one (no groups in groups), framed around what they draw (`sizes`, from the
         // canvas, since a node's preview can draw past its measured box), and its members back where they were when
-        // it's ungrouped
+        // it's ungrouped. Grouping nodes all ungrouped from one group brings back its face (title, pins, input, output,
+        // folded or not) rather than a new one's
         groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => {
             const nodes = get().nodes.filter(n => ids.includes(n.id) && n.data.type !== 'group' && !n.parentId);
             if (nodes.length === 0) return null;
             const size = (n: CustomNodeType) => sizes?.[n.id] ?? { width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 };
-            const pad = 20, header = GROUP_HEADER;
+            const pad = GROUP_PAD, header = GROUP_HEADER;
+            const was = new Set(nodes.map(n => JSON.stringify(n.data.ungrouped ?? null))).size === 1 ? nodes[0].data.ungrouped : undefined;
+            const members = new Set(nodes.map(n => n.id));
+            const face = defaultFace(nodes, get().edges);
 
             const minX = Math.min(...nodes.map(n => n.position.x));
             const minY = Math.min(...nodes.map(n => n.position.y));
@@ -471,24 +476,32 @@ export const useFlowStore = create<FlowStore>()(
                 height: maxY - minY + 2 * pad + header,
                 data: {
                     type: 'group',
-                    label: 'Group',
+                    label: was?.label ?? 'Group',
                     category: 'group',
                     module: '',
                     action: '',
                     params: {},
-                    collapsed: false,
-                    ...defaultFace(nodes, get().edges),
+                    collapsed: !!was?.collapsed,
+                    ...face,
+                    ...(was ? {
+                        inputNode: was.inputNode && members.has(was.inputNode) ? was.inputNode : face.inputNode,
+                        outputNode: was.outputNode && members.has(was.outputNode) ? was.outputNode : face.outputNode,
+                        pinned: (was.pinned ?? []).filter(p => members.has(p.node)),
+                        cardWidth: was.cardWidth,
+                    } : {}),
                 },
                 position: {
                     x: minX - pad,
                     y: minY - pad - header,
                 },
             };
-            const members = new Set(nodes.map(n => n.id));
-            set((state) => ({
-                nodes: [groupNode, ...state.nodes.map(n => members.has(n.id)
+            // folded again, the row to its right comes back by what ungrouping it moved it along
+            const row = pushRow(get().nodes, groupNode, -(was?.pushed ?? 0), members);
+            set(() => ({
+                nodes: [groupNode, ...row.map(n => members.has(n.id)
                     ? {
                         ...n,
+                        data: { ...n.data, ungrouped: undefined },
                         parentId: groupNode.id,
                         position: { x: n.position.x - groupNode.position.x, y: n.position.y - groupNode.position.y },
                         extent: 'parent' as const,
@@ -501,10 +514,18 @@ export const useFlowStore = create<FlowStore>()(
             set((state) => {
                 const group = state.nodes.find(n => n.id === id);
                 if (!group) return state;
+                const { label, collapsed, inputNode, outputNode, pinned, cardWidth: width } = group.data;
+                // a folded group's members are laid out as its frame, which the row to its right moves along for
+                const pushed = collapsed ? pastCard(group) : 0;
+                const row = pushRow(state.nodes, group, pushed);
                 return {
-                    nodes: state.nodes.filter(n => n.id !== id).map(n => {
+                    nodes: row.filter(n => n.id !== id).map(n => {
                         if (n.parentId !== id) return n;
-                        const member = { ...n, position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y } };
+                        const member = {
+                            ...n,
+                            data: { ...n.data, ungrouped: { label, collapsed, inputNode, outputNode, pinned, cardWidth: width, pushed } },
+                            position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y },
+                        };
                         delete member.parentId;
                         delete member.extent;
                         return member;
@@ -513,7 +534,31 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
         setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => {
-            set((state) => ({ nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n) }));
+            set((state) => {
+                const group = state.nodes.find(n => n.id === id);
+                if (!group) return state;
+                // unfolding draws the frame where the card was: the row to its right moves along, and back on folding
+                const turned = 'collapsed' in data && !!data.collapsed !== !!group.data.collapsed;
+                const dx = turned ? pastCard(group) * (data.collapsed ? -1 : 1) : 0;
+                return { nodes: pushRow(state.nodes, group, dx).map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n) };
+            });
+        },
+        // an unfolded group's members moved off one another and its frame grown to hold them, as they draw (`sizes`),
+        // the row to its right moving along by what it grew
+        fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => {
+            set((state) => {
+                const group = state.nodes.find(n => n.id === id);
+                const members = state.nodes.filter(n => n.parentId === id && sizes[n.id]);
+                if (!group || group.data.collapsed || !members.length) return state;
+                const fit = fitFrame(members, sizes);
+                const width = Math.max(group.width ?? 0, fit.width), height = Math.max(group.height ?? 0, fit.height);
+                const moved = members.some(m => fit.positions[m.id].x !== m.position.x || fit.positions[m.id].y !== m.position.y);
+                if (!moved && width === group.width && height === group.height) return state;
+                return {
+                    nodes: pushRow(state.nodes, group, pastCard({ ...group, width }) - pastCard(group)).map(n => n.id === id ? { ...n, width, height }
+                        : n.parentId === id && fit.positions[n.id] ? { ...n, position: fit.positions[n.id] } : n),
+                };
+            });
         },
         setViewport: (viewport: Viewport) => {
             set({ viewport });

@@ -30,7 +30,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
 import GroupNode from './GroupNode';
-import { foldView } from './groups';
+import { drawnSize, foldView } from './groups';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -542,20 +542,7 @@ function Workflow() {
   const groupSelected = useCallback(() => {
     const ids = useFlowStore.getState().nodes.filter(n => n.selected && n.data.type !== 'group' && !n.parentId).map(n => n.id);
     if (ids.length < 2) return;
-    const zoom = useFlowStore.getState().viewport.zoom || 1;
-    const sizes = Object.fromEntries(ids.map(id => {
-      // what the node draws, previews included, which can reach past its measured box
-      const el = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`);
-      if (!el) return [id, { width: 0, height: 0 }];
-      const box = el.getBoundingClientRect();
-      let right = box.right, bottom = box.bottom;
-      el.querySelectorAll('*').forEach(child => {
-        const r = child.getBoundingClientRect();
-        if (r.width && r.height) { right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom); }
-      });
-      return [id, { width: (right - box.left) / zoom, height: (bottom - box.top) / zoom }];
-    }));
-    groupNodes(ids, sizes);
+    groupNodes(ids, Object.fromEntries(ids.map(id => [id, drawnSize(id) ?? { width: 0, height: 0 }])));
   }, [groupNodes]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
