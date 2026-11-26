@@ -16,7 +16,11 @@ const result = (p: { display?: string }) => String(p.display ?? '').startsWith('
 const noResults = (n: CustomNodeType) => !n.data.params ? n : { ...n, data: { ...n.data, params: Object.fromEntries(
   Object.entries(n.data.params).map(([k, p]) => [k, result(p) ? { ...p, value: undefined } : p])) } };
 
+// whether a node shows a result
+const shows = (n: CustomNodeType) => Object.values(n.data.params ?? {}).some(p => result(p) && (Array.isArray(p.value) ? p.value.length : p.value));
+
 let sent = '';
+let keys: Record<string, string | null> = {}; // the last answer
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 async function check() {
@@ -26,14 +30,24 @@ async function check() {
   const body = JSON.stringify({ nodes });
   if (body === sent || !Object.keys(nodes).length) return;
   sent = body;
-  const show = useFlowStore.getState().nodes.filter(n => n.id in nodes && !Object.values(n.data.params ?? {})
-    .some(p => result(p) && (Array.isArray(p.value) ? p.value.length : p.value))).map(n => n.id);
+  const show = useFlowStore.getState().nodes.filter(n => n.id in nodes && !shows(n)).map(n => n.id);
   try {
     const response = await fetch(`${config.serverAddress}/stored`, { method: 'POST', body: JSON.stringify({ nodes, paths, sid, show }) });
     if (!response.ok) throw new Error(response.statusText);
-    const stored: Record<string, boolean> = await response.json();
+    const answer: Record<string, string | null> = await response.json(); // each node's key if stored
     if (body !== sent || useTaskStore.getState().taskCount) return;
-    useFlowStore.getState().updateCacheStatus(Object.keys(stored).filter(id => stored[id]));
+    const before = keys;
+    keys = answer;
+    useFlowStore.getState().updateCacheStatus(Object.keys(answer).filter(id => answer[id]));
+    // a node shows no result of another key: not stored, or stored under a key other than the last answer's (an edit
+    // or a Library pick moved it), its results are cleared; a stored one's are drawn by asking again (it shows none).
+    // Results are not in the body, and a node whose key stays is left alone, so this asks at most once more.
+    const stale = (n: CustomNodeType) => n.id in answer && shows(n) && (!answer[n.id] || answer[n.id] !== before[n.id]);
+    const cleared = useFlowStore.getState().nodes.filter(stale);
+    if (cleared.length) {
+      useFlowStore.setState(s => ({ nodes: s.nodes.map(n => stale(n) ? noResults(n) : n) }));
+      if (cleared.some(n => answer[n.id])) recheck();
+    }
   } catch (error) {
     if (body === sent) sent = '';
     console.error('Error asking the store what it holds:', error);
