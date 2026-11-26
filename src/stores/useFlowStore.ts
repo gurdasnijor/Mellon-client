@@ -777,3 +777,11 @@ export const useFlowStore = create<FlowStore>()(
         }),
     })
 )
+
+// ours: one canvas per page address. persist rewrites the saved canvas from whichever tab changes state last, a tab in
+// the background too (each one's welcome on a reconnect), so a tab holding an older graph put it back over the one in
+// use, and the page reopened on that. Every tab follows the saved canvas instead: another tab's write is taken in here,
+// so what any tab writes back is the latest canvas, and a reload restores what was last on screen.
+window.addEventListener('storage', (event) => {
+    if (event.key === useFlowStore.persist.getOptions().name) useFlowStore.persist.rehydrate();
+});
