@@ -7,8 +7,9 @@ import { isResult } from '../components/groups';
 // ours: the canvas shows what the store holds, never what a saved graph says. When the exported graph changes (a graph
 // opened from the list, by Open or the Gallery's Open, or an edit that can move a key) and no task is running, its
 // nodes go to POST /stored, which keys them as a run would and reads the store, running nothing; each node's isCached
-// is set from the answer. One asked while a run started is dropped: the run's messages say what it stores. The nodes
-// showing no result yet are sent as show: the stored ones among them draw their results from the store, running nothing.
+// is set from the answer, and skipped, which a run would skip (a lane past the plan's pieces, which the canvas hides).
+// One asked while a run started is dropped: the run's messages say what it stores. The nodes showing no result yet are
+// sent as show: the stored ones among them draw their results from the store, running nothing.
 
 // a node as it was before any run, its results cleared
 const noResults = (n: CustomNodeType) => !n.data.params ? n : { ...n, data: { ...n.data, params: Object.fromEntries(
@@ -35,15 +36,17 @@ async function check() {
   try {
     const response = await fetch(`${config.serverAddress}/stored`, { method: 'POST', body: JSON.stringify({ nodes, paths, sid, show }) });
     if (!response.ok) throw new Error(response.statusText);
-    const answer: Record<string, string | null> = await response.json(); // each node's key if stored
+    // each node's key if stored, and the nodes skipped
+    const { keys: answer, skipped }: { keys: Record<string, string | null>; skipped: string[] } = await response.json();
     if (during && body === sent) { // what the store holds so far, beside what the run's messages said meanwhile
-      const cached = useFlowStore.getState().nodes.filter(n => n.data.isCached).map(n => n.id);
-      return useFlowStore.getState().updateCacheStatus([...cached, ...Object.keys(answer).filter(id => answer[id])]);
+      const { nodes } = useFlowStore.getState();
+      return useFlowStore.getState().updateCacheStatus([...nodes.filter(n => n.data.isCached).map(n => n.id), ...Object.keys(answer).filter(id => answer[id])],
+        [...nodes.filter(n => n.data.skipped).map(n => n.id), ...skipped]);
     }
     if (body !== sent || useTaskStore.getState().taskCount) return;
     const before = keys;
     keys = answer;
-    useFlowStore.getState().updateCacheStatus(Object.keys(answer).filter(id => answer[id]));
+    useFlowStore.getState().updateCacheStatus(Object.keys(answer).filter(id => answer[id]), skipped);
     // a node shows no result of another key: not stored, or stored under a key other than the last answer's (an edit
     // or a Library pick moved it), its results are cleared; a stored one's are drawn by asking again (it shows none).
     // Results are not in the body, and a node whose key stays is left alone, so this asks at most once more.
