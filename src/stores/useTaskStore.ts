@@ -9,6 +9,8 @@ export type Task = {
     progress?: number;
     sid?: string;
     task_id?: string;
+    running?: string[]; // ours: the current task's nodes running now
+    stopping?: boolean; // ours: Stop was pressed; it ends after what runs now
 }
 
 interface TaskState {
