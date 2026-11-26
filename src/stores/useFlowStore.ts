@@ -59,7 +59,7 @@ export type FlowStore = {
     setViewport: (viewport: Viewport) => void;
     setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
     updateCacheStatus: (ids: string | string[]) => void;
-    exportGraph: (sid: string, targetNodeId?: string, check?: boolean) => APIGraphExport;
+    exportGraph: (sid: string, targetNodeId?: string | string[], check?: boolean) => APIGraphExport; // ours: or several, a folded card's ends
     updateProgress: (id: string, progress: number) => void;
     resetStatus: (cachedIds: string | string[]) => void;
     toObject: () => {
@@ -611,8 +611,10 @@ export const useFlowStore = create<FlowStore>()(
             });
         },
 
-        exportGraph: (sid: string, targetNodeId?: string, check = false) => { // ours: check, for the store check (stored.ts)
+        exportGraph: (sid: string, targetNodeId?: string | string[], check = false) => { // ours: check, for the store check (stored.ts); several targets, a folded card's ends
             const { nodes, edges } = get();
+            // ours: several targets, as a folded card's ▶ runs every member no other member reads
+            const targets = targetNodeId === undefined ? [] : [targetNodeId].flat();
             const sessionId = sid || '';
             
             // Filter out group nodes and nodes without module/action
@@ -631,11 +633,9 @@ export const useFlowStore = create<FlowStore>()(
             }
             
             // If targetNodeId is provided, validate it exists
-            let targetNode: CustomNodeType | undefined;
-            if (targetNodeId) {
-                targetNode = executableNodes.find(node => node.id === targetNodeId);
-                if (!targetNode) {
-                    throw new Error(`Target node with id ${targetNodeId} not found in executable nodes`);
+            for (const target of targets) {
+                if (!executableNodes.some(node => node.id === target)) {
+                    throw new Error(`Target node with id ${target} not found in executable nodes`);
                 }
             }
             
@@ -679,9 +679,9 @@ export const useFlowStore = create<FlowStore>()(
             // Determine which nodes to include in the export
             let nodesToInclude: string[] = [];
             
-            if (targetNodeId && targetNode) {
-                // For partial export: only include nodes needed for the target node
-                nodesToInclude = walkBackwards(targetNodeId);
+            if (targets.length) {
+                // For partial export: only include nodes needed for the targets
+                nodesToInclude = [...new Set(targets.flatMap(target => walkBackwards(target)))];
             } else {
                 // For full export: find output nodes and include all nodes in their paths
                 const outputNodes = executableNodes.filter(node => {
@@ -778,11 +778,13 @@ export const useFlowStore = create<FlowStore>()(
             // Generate paths
             const paths: string[][] = [];
             
-            if (targetNodeId && targetNode) {
-                // For partial export: single path to the target node
-                const path = walkBackwards(targetNodeId);
-                if (path.length > 0) {
-                    paths.push(path);
+            if (targets.length) {
+                // For partial export: a path to each target node
+                for (const target of targets) {
+                    const path = walkBackwards(target);
+                    if (path.length > 0) {
+                        paths.push(path);
+                    }
                 }
             } else {
                 // For full export: paths from all output nodes

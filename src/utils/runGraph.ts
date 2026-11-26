@@ -3,7 +3,7 @@ import config from "../../app.config";
 import { useFlowStore } from "../stores/useFlowStore";
 import { useSavedGraphStore } from "../stores/useSavedGraphStore";
 
-export const runGraph = async (sid: string, targetNodeId?: string) => {
+export const runGraph = async (sid: string, targetNodeId?: string | string[]) => {
     // ours: a run clears the last one's failures and skips
     useFlowStore.setState(s => ({ nodes: s.nodes.map(n => n.data.failed || n.data.skipped ? { ...n, data: { ...n.data, failed: undefined, skipped: false } } : n) }));
     const graph = useFlowStore.getState().exportGraph(sid, targetNodeId);
