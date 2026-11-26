@@ -1,5 +1,6 @@
 // ours: the Gallery, the renders kept as saved graphs (GET /renders), newest first, each with its videos as the store
-// has them now: Assemble's once it is stored, else the takes so far. A click plays one; Open puts its canvas back.
+// has them now: Assemble's once it is stored, else the takes so far, and how its run ended if it failed or was stopped.
+// A click plays one; Open puts its canvas back.
 import { useCallback, useEffect, useState } from 'react';
 import config from '../../app.config';
 import { useOpenGraph } from '../utils/openGraph';
@@ -15,7 +16,14 @@ import CircularProgress from '@mui/material/CircularProgress';
 import ReplayIcon from '@mui/icons-material/Replay';
 
 type Video = { node: string; label: string | null; file: string };
-type Render = { path: string; graph: string | null; time: string; finished: boolean; videos: Video[] };
+// how the run ended, written into the render as it ends: none while it runs (or if its server stopped mid-run)
+type Outcome = { state: 'done' | 'stopped' | 'failed'; error: string | null };
+type Render = { path: string; graph: string | null; time: string; finished: boolean; videos: Video[]; outcome: Outcome | null };
+const takes = (render: Render) => `${render.videos.length} take${render.videos.length === 1 ? '' : 's'}`;
+const ended = (render: Render) =>
+  render.outcome?.state === 'failed' ? `failed: ${render.outcome.error ?? 'unknown error'} · ${takes(render)}`
+  : render.outcome?.state === 'stopped' ? `stopped · ${takes(render)}`
+  : render.finished ? 'finished' : `${takes(render)} so far`;
 
 const stream = (file: string) => `${config.serverAddress}/stream?file=${encodeURIComponent(file)}`;
 // a render's name is its UTC time, 2026-11-25T19-11-56.975Z, which reads back as that instant
@@ -59,7 +67,8 @@ export default function Gallery() {
               <ListItemText
                 sx={{ px: 2 }}
                 primary={render.graph ?? 'Unsaved graph'}
-                secondary={`${when(render.time)} · ${render.finished ? 'finished' : `${render.videos.length} take${render.videos.length === 1 ? '' : 's'} so far`}`}
+                secondary={`${when(render.time)} · ${ended(render)}`}
+                slotProps={{ secondary: { sx: { color: render.outcome?.state === 'failed' ? 'error.main' : undefined, overflowWrap: 'anywhere' } } }}
               />
               <Button size="small" variant="outlined" onClick={() => open(render.path)}>Open</Button>
             </Box>
