@@ -1,15 +1,18 @@
 import { create } from "zustand";
 
 // ours: the saved graph the canvas was opened from (a store: path from /listgraphs) and its ETag, so that Save
-// writes over it only as it was opened; null for a new graph, an example or a dropped file
+// writes over it only as it was opened; null for a new graph, an example or a dropped file. Its renders file under
+// `renders`: the saved graph's path, or for an example from the list the path it would have saved under its name
 type SavedGraphStore = {
     path: string | null;
     etag: string | null;
-    setSaved: (path: string | null, etag: string | null) => void;
+    renders: string | null;
+    setSaved: (path: string | null, etag: string | null, renders?: string | null) => void;
 };
 
 export const useSavedGraphStore = create<SavedGraphStore>((set) => ({
     path: null,
     etag: null,
-    setSaved: (path, etag) => set({ path, etag }),
+    renders: null,
+    setSaved: (path, etag, renders = path) => set({ path, etag, renders }),
 }));

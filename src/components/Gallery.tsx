@@ -1,11 +1,8 @@
 // ours: the Gallery, the renders kept as saved graphs (GET /renders), newest first, each with its videos as the store
 // has them now: Assemble's once it is stored, else the takes so far. A click plays one; Open puts its canvas back.
 import { useCallback, useEffect, useState } from 'react';
-import { useReactFlow, Edge } from '@xyflow/react';
-import { enqueueSnackbar } from 'notistack';
 import config from '../../app.config';
-import { useSettingsStore } from '../stores/useSettingsStore';
-import { useSavedGraphStore } from '../stores/useSavedGraphStore';
+import { useOpenGraph } from '../utils/openGraph';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -16,7 +13,6 @@ import ListItemText from '@mui/material/ListItemText';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import ReplayIcon from '@mui/icons-material/Replay';
-import { unstored } from '../stores/stored';
 
 type Video = { node: string; label: string | null; file: string };
 type Render = { path: string; graph: string | null; time: string; finished: boolean; videos: Video[] };
@@ -29,8 +25,7 @@ export default function Gallery() {
   const [renders, setRenders] = useState<Render[]>([]);
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState<{ path: string; file: string } | null>(null);
-  const { setNodes, setEdges, setViewport } = useReactFlow();
-  const edgeType = useSettingsStore(state => state.edgeType);
+  const { open } = useOpenGraph(); // as a graph opens from the graph list: Save and a new run file under its composition
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,21 +40,6 @@ export default function Gallery() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  // as a graph dropped from the graph list opens (Workflow's drop), so Save and a new run file under its composition
-  const open = async (path: string) => {
-    const response = await fetch(`${config.serverAddress}/file?file=${encodeURIComponent(path)}&t=${Date.now()}`);
-    if (!response.ok) {
-      const err = `Error fetching graph file: ${response.statusText}`;
-      enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
-      return;
-    }
-    const { nodes, edges, viewport } = await response.json();
-    setNodes(unstored(nodes));
-    setEdges(edges.map((e: Edge) => ({ ...e, type: edgeType })));
-    setViewport(viewport);
-    useSavedGraphStore.getState().setSaved(path, response.headers.get('ETag'));
-  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

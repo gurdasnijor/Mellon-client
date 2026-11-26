@@ -14,6 +14,7 @@ import {
   ConnectionLineType,
   NodeToolbar,
   Position,
+  Panel,
 } from '@xyflow/react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -37,9 +38,8 @@ import ModelManagerDialog from './ModelManagerDialog';
 import AlertDialog from './AlertDialog';
 import SettingsDialog from './SettingsDialog';
 import LightboxDialog from './LightboxDialog';
-import config from '../../app.config';
 import { useSavedGraphStore } from '../stores/useSavedGraphStore';
-import { unstored } from '../stores/stored';
+import { useOpenGraph } from '../utils/openGraph';
 
 const nodeTypes = {
   custom: CustomNode,
@@ -85,7 +85,8 @@ function Workflow() {
     setLightboxOpener,
   } = useSettingsStore();
 
-  const { screenToFlowPosition, setNodes, setEdges, setViewport } = useReactFlow();
+  const { screenToFlowPosition } = useReactFlow();
+  const { open, show } = useOpenGraph();
 
   const [anchorPosition, setAnchorPosition] = useState<{ top: number, left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -464,18 +465,7 @@ function Workflow() {
 
       const reader = new FileReader();
       reader.onload = (e) => {
-        const graph = JSON.parse(e.target?.result as string);
-        const { nodes, edges, viewport } = graph;
-
-        // override the edge type to the value of the edgeType store
-        const newEdges = edges.map((e: Edge) => ({
-          ...e,
-          type: edgeType
-        }));
-
-        setNodes(unstored(nodes));
-        setEdges(newEdges);
-        setViewport(viewport);
+        show(JSON.parse(e.target?.result as string));
         useSavedGraphStore.getState().setSaved(null, null);
       }
       reader.readAsText(file);
@@ -490,31 +480,7 @@ function Workflow() {
 
     // if data ends with .json, it's a graph file
     if (data.endsWith('.json')) {
-      const response = await fetch(`${config.serverAddress}/file?file=${encodeURIComponent(data)}&t=${Date.now()}`);
-      if (!response.ok) {
-        const err = `Error fetching graph file: ${response.statusText}`;
-        enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
-        return;
-      }
-
-      const graph = await response.json();
-      if (graph.error) {
-        const err = `Error fetching graph file: ${graph.error}`;
-        enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
-        return;
-      }
-
-      const { nodes, edges, viewport } = graph;
-      const newEdges = edges.map((e: Edge) => ({
-        ...e,
-        type: edgeType
-      }));
-
-      setNodes(unstored(nodes));
-      setEdges(newEdges);
-      setViewport(viewport);
-      const saved = data.startsWith('store:');
-      useSavedGraphStore.getState().setSaved(saved ? data : null, saved ? response.headers.get('ETag') : null);
+      open(data);
       return;
     }
 
@@ -539,7 +505,7 @@ function Workflow() {
     }
 
     addNode(newNode);
-  }, [screenToFlowPosition, addNode, nodesRegistry, edgeType]);
+  }, [screenToFlowPosition, addNode, nodesRegistry, open, show]);
 
   const handleEdgeDoubleClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.preventDefault();
@@ -618,6 +584,18 @@ function Workflow() {
         <NodeToolbar nodeId={groupable} isVisible={groupable.length >= 2} position={Position.Top}>
           <Button size="small" variant="contained" onClick={groupSelected} title="Group the selected nodes (Ctrl/⌘ G)">Group</Button>
         </NodeToolbar>
+        {/* ours: a blank canvas says how to open a graph */}
+        {nodes.length === 0 && (
+          <Panel position="top-center" style={{ top: '35%' }}>
+            <Box sx={{ textAlign: 'center', color: 'text.secondary', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ fontSize: 18, color: 'text.primary' }}>No graph open</Box>
+              <Box>Click a graph in the graph list to open it, or drop a graph file here.</Box>
+              <Button variant="outlined" onClick={() => { const s = useSettingsStore.getState(); s.setLeftPanelTabIndex(2); s.setLeftPanelOpen(true); }}>
+                Show the graph list
+              </Button>
+            </Box>
+          </Panel>
+        )}
         <Background
           variant={BackgroundVariant.Dots}
           gap={16}

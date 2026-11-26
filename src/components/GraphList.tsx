@@ -15,6 +15,7 @@ import OutlinedInput from '@mui/material/OutlinedInput';
 import ReplayIcon from '@mui/icons-material/Replay';
 import IconButton from '@mui/material/IconButton';
 import CircularProgress from '@mui/material/CircularProgress';
+import { useOpenGraph } from '../utils/openGraph';
 
 export interface GraphData {
   isDir: boolean;
@@ -23,10 +24,15 @@ export interface GraphData {
   children?: GraphData[];
 }
 
+// ours: the folders left open, kept while the sidebar is closed, which unmounts the list
+let openFolders = new Set<string>();
+
 function GraphList() {
+  const { open } = useOpenGraph();
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(openFolders);
+  useEffect(() => { openFolders = expanded; }, [expanded]);
   const [search, setSearch] = useState('');
 
   const fetchGraphs = useCallback(async () => {
@@ -116,15 +122,17 @@ function GraphList() {
     } else if (!node.isDir) {
       return (
         <ListItem dense disablePadding disableGutters key={node.path} sx={{ pl: 2 + (search ? 0 : level) * 2 }}>
-          <ListItemText
+          {/* ours: a click opens it, as a drop onto the canvas does */}
+          <ListItemButton dense disableGutters disableRipple onClick={() => open(node.path)} title="Open, or drag onto the canvas"
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', node.path);
               e.dataTransfer.effectAllowed = 'move';
             }}
-            sx={{ cursor: 'grab' }}
-            primary={node.name}
-          />
+            sx={{ cursor: 'pointer', pl: 0 }}
+          >
+            <ListItemText primary={node.name} />
+          </ListItemButton>
         </ListItem>
       );
     }
