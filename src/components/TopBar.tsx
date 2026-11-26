@@ -63,6 +63,9 @@ function TopBar() {
   const clearWorkflow = useFlowStore(state => state.clearWorkflow);
   const toObject = useFlowStore(state => state.toObject);
   const exportGraph = useFlowStore(state => state.exportGraph);
+  // ours: once Stop is pressed, the task ends after the nodes running now, which it names
+  const stoppingAfter = useFlowStore(state => !currentTask?.stopping ? '' : (currentTask.running ?? [])
+    .map(id => state.nodes.find(n => n.id === id)?.data.label || id).join(', '));
 
   const handleExecuteMenuClick = () => {
     setExecuteButtonOpen(!executeButtonOpen);
@@ -296,7 +299,7 @@ function TopBar() {
           title="Stop"
           variant="text"
           onClick={handleStopClick}
-          disabled={!isConnected || ((runningState === 'one_shot' && !taskCount) || (executeButtonIndex === 1 && runningState !== 'auto_queue'))}
+          disabled={!isConnected || !!currentTask?.stopping || ((runningState === 'one_shot' && !taskCount) || (executeButtonIndex === 1 && runningState !== 'auto_queue'))}
           sx={{
             minWidth: '0px',
             backgroundColor: `rgba(255, 255, 255, 0.05)`,
@@ -309,6 +312,8 @@ function TopBar() {
         >
           <StopIcon />
         </Button>
+        {currentTask?.stopping && <Typography data-key="stopping" variant="caption" sx={{ color: 'warning.main', whiteSpace: 'nowrap' }}>
+          {stoppingAfter ? `Stopping after ${stoppingAfter}` : 'Stopping'}</Typography>}
 
         <Box sx={{ position: 'relative', display: 'inline-flex' }}>
           <CircularProgress color="success" variant="determinate" value={currentTask?.progress ?? 0} size={38} thickness={4} sx={{ borderRadius: '50%', boxShadow: 'inset 0 0 0 4px rgba(255, 255, 255, 0.12)', '& .MuiCircularProgress-circle': { transition: '60ms' } }} />
