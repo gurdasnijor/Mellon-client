@@ -61,13 +61,13 @@ export function drawnSize(id: string): Size | undefined {
 }
 
 /**
- * The top-level nodes beside a group, to its right, moved `dx` along: a group unfolds (and ungroups) in place, so the
+ * The top-level nodes beside a group, to its right, moved `dx` along: a group unfolds in place, so the
  * nodes its frame would cover move right by what the frame draws past its card, and back when it folds.
  */
-export function pushRow(nodes: CustomNodeType[], group: CustomNodeType, dx: number, members = new Set<string>()): CustomNodeType[] {
+export function pushRow(nodes: CustomNodeType[], group: CustomNodeType, dx: number): CustomNodeType[] {
   if (!dx) return nodes;
   const top = group.position.y, bottom = top + (group.height ?? 0);
-  return nodes.map(n => !n.parentId && n.id !== group.id && !members.has(n.id) && n.position.x > group.position.x
+  return nodes.map(n => !n.parentId && n.id !== group.id && n.position.x > group.position.x
     && n.position.y < bottom && n.position.y + (n.measured?.height ?? 0) >= top
     ? { ...n, position: { x: n.position.x + dx, y: n.position.y } } : n);
 }

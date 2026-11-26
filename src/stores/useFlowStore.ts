@@ -475,8 +475,8 @@ export const useFlowStore = create<FlowStore>()(
         },
         // ours: a group of nodes not in one (no groups in groups), framed around what they draw (`sizes`, from the
         // canvas, since a node's preview can draw past its measured box), and its members back where they were when
-        // it's ungrouped. Grouping nodes all ungrouped from one group brings back its face (title, pins, input, output,
-        // folded or not) rather than a new one's
+        // it's ungrouped. Grouping nodes all ungrouped from one group brings back its face (title, pins, input, output)
+        // rather than a new one's
         groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => {
             const nodes = get().nodes.filter(n => ids.includes(n.id) && n.data.type !== 'group' && !n.parentId);
             if (nodes.length === 0) return null;
@@ -503,7 +503,6 @@ export const useFlowStore = create<FlowStore>()(
                     module: '',
                     action: '',
                     params: {},
-                    collapsed: !!was?.collapsed,
                     ...face,
                     ...(was ? {
                         inputNode: was.inputNode && members.has(was.inputNode) ? was.inputNode : face.inputNode,
@@ -517,10 +516,8 @@ export const useFlowStore = create<FlowStore>()(
                     y: minY - pad - header,
                 },
             };
-            // folded again, the row to its right comes back by what ungrouping it moved it along
-            const row = pushRow(get().nodes, groupNode, -(was?.pushed ?? 0), members);
-            set(() => ({
-                nodes: [groupNode, ...row.map(n => members.has(n.id)
+            set((state) => ({
+                nodes: [groupNode, ...state.nodes.map(n => members.has(n.id)
                     ? {
                         ...n,
                         data: { ...n.data, ungrouped: undefined },
@@ -536,16 +533,14 @@ export const useFlowStore = create<FlowStore>()(
             set((state) => {
                 const group = state.nodes.find(n => n.id === id);
                 if (!group) return state;
-                const { label, collapsed, inputNode, outputNode, pinned, cardWidth: width } = group.data;
-                // a folded group's members are laid out as its frame, which the row to its right moves along for
-                const pushed = collapsed ? pastCard(group) : 0;
-                const row = pushRow(state.nodes, group, pushed);
+                // unfolded (only a frame has Ungroup), so its members are laid out where they draw
+                const { label, inputNode, outputNode, pinned, cardWidth: width } = group.data;
                 return {
-                    nodes: row.filter(n => n.id !== id).map(n => {
+                    nodes: state.nodes.filter(n => n.id !== id).map(n => {
                         if (n.parentId !== id) return n;
                         const member = {
                             ...n,
-                            data: { ...n.data, ungrouped: { label, collapsed, inputNode, outputNode, pinned, cardWidth: width, pushed } },
+                            data: { ...n.data, ungrouped: { label, inputNode, outputNode, pinned, cardWidth: width } },
                             position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y },
                         };
                         delete member.parentId;
@@ -569,7 +564,7 @@ export const useFlowStore = create<FlowStore>()(
             if (fold) useFlowStore.temporal.getState().resume();
         },
         // an unfolded group's members laid out and its frame fitted to them as they draw (`sizes`), the row to its right
-        // moving along by what the frame's width changed
+        // (beside the frame as fitted: group.py's frames have no size) moving along by what the frame's width changed
         fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => {
             useFlowStore.temporal.getState().pause(); // part of the unfold it follows, not a step of its own
             set((state) => {
@@ -581,7 +576,7 @@ export const useFlowStore = create<FlowStore>()(
                 const moved = members.some(m => fit.positions[m.id].x !== m.position.x || fit.positions[m.id].y !== m.position.y);
                 if (!moved && width === group.width && height === group.height) return state;
                 return {
-                    nodes: pushRow(state.nodes, group, pastCard({ ...group, width }) - pastCard(group)).map(n => n.id === id ? { ...n, width, height }
+                    nodes: pushRow(state.nodes, { ...group, height }, pastCard({ ...group, width }) - pastCard(group)).map(n => n.id === id ? { ...n, width, height }
                         : n.parentId === id && fit.positions[n.id] ? { ...n, position: fit.positions[n.id] } : n),
                 };
             });

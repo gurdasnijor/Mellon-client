@@ -122,7 +122,8 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
         {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${endLabels || 'the output'})`}
           disabled={!isConnected || !!running} onClick={() => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, ends.length ? ends : node.data.outputNode); }}>
           <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>}
-        <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
+        {/* a frame's members ungroup where they draw; a card's aren't laid out until it unfolds */}
+        {!folded && <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>}
       </Box>
       {folded && (
         <Box sx={{ py: 1 }}>
