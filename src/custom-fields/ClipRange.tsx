@@ -69,11 +69,12 @@ export default function ClipRange(props: FieldProps) {
     };
   }, [video, fps]);
 
-  // Another clip: the marks start over at the whole clip.
+  // Another clip: the marks start over at the whole clip. None shown is not another clip: a graph opens with no results
+  // until the store draws them (stored.ts), the same clip again.
   const clip = JSON.stringify(props.fieldOptions?.clip ? source?.split('?')[0] ?? null : props.value ?? null);
   const previous = useRef(clip);
   useEffect(() => {
-    if (previous.current !== clip) {
+    if (previous.current !== clip && clip !== 'null') {
       const opened = previous.current === 'null'; // the first clip a node shows keeps the marks it was saved with
       previous.current = clip;
       if (opened) return;

@@ -664,9 +664,11 @@ export const useFlowStore = create<FlowStore>()(
                         }
                     }
 
+                    // ours: nor a result's value, which no key reads and showing results would change (stored.ts)
                     const param: APINodeExport['params'][string] = {
                         display: paramData.display,
-                        value: check && paramData.display === 'random' && typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value
+                        value: check && String(paramData.display ?? '').startsWith('ui_') ? undefined
+                            : check && paramData.display === 'random' && typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value
                             ? paramData.value.value
                             : paramData.value,
                     };

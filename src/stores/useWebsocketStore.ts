@@ -144,8 +144,8 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                         console.info('Server instance changed, fetching nodes');
                     }
                     const cached = message.cachedNodes ?? [];
+                    recheck(cached); // ours: what the store holds (first: resetStatus puts back the nodes it found)
                     useFlowStore.getState().resetStatus(cached);
-                    recheck(); // ours: then what the store holds
                     break;
                 case 'executed':
                     if (!message.node) {
