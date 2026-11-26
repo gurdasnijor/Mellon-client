@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from "zustand/middleware";
+import { temporal, type ZundoOptions } from 'zundo'
 import { NodeData, NodeParams } from './useNodeStore'
 import { nanoid } from 'nanoid'
 import {
@@ -87,8 +88,29 @@ type APIGraphExport = {
     paths: string[][];
 }
 
+// ours: undo history of the graph a user edits, not of what a run or the store says about it: a node's run state and
+// results, selection and drawn size are left out (and an undo keeps the live ones: the store check answers for a node
+// whose key it moves). Edits less than half a second apart are one step (a drag, typing in a field)
+const RUN_STATE = ['isCached', 'skipped', 'failed', 'progress', 'memoryUsage', 'executionTime'] as const;
+const isResult = (p: NodeParams) => String(p.display ?? '').startsWith('ui_') && !['ui_button', 'ui_group'].includes(String(p.display));
+const graphOf = (state: Pick<FlowStore, 'nodes' | 'edges'>) => ({
+    edges: state.edges.map(e => ({ ...e, selected: undefined })),
+    nodes: state.nodes.map(n => ({ ...n, selected: undefined, dragging: undefined, measured: undefined, data: {
+        ...Object.fromEntries(Object.entries(n.data).filter(([k]) => !(RUN_STATE as readonly string[]).includes(k))) as NodeData,
+        params: Object.fromEntries(Object.entries(n.data.params ?? {}).map(([k, p]) => [k, isResult(p) ? { ...p, value: undefined } : p])),
+    } })),
+});
+let lastEdit = 0;
+const HISTORY: ZundoOptions<FlowStore, ReturnType<typeof graphOf>> = {
+    partialize: graphOf,
+    equality: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    limit: 100,
+    // zundo types `save` as setState; it is its _handleSet, which takes all four
+    handleSet: save => (...args) => { if (Date.now() - lastEdit > 500) (save as (...a: typeof args) => void)(...args); lastEdit = Date.now(); },
+};
+
 export const useFlowStore = create<FlowStore>()(
-    persist((set, get) => ({
+    persist(temporal((set, get) => ({
         nodes: [],
         edges: [],
         viewport: {
@@ -546,6 +568,7 @@ export const useFlowStore = create<FlowStore>()(
         // an unfolded group's members moved off one another and its frame grown to hold them, as they draw (`sizes`),
         // the row to its right moving along by what it grew
         fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => {
+            useFlowStore.temporal.getState().pause(); // part of the unfold it follows, not a step of its own
             set((state) => {
                 const group = state.nodes.find(n => n.id === id);
                 const members = state.nodes.filter(n => n.parentId === id && sizes[n.id]);
@@ -559,6 +582,7 @@ export const useFlowStore = create<FlowStore>()(
                         : n.parentId === id && fit.positions[n.id] ? { ...n, position: fit.positions[n.id] } : n),
                 };
             });
+            useFlowStore.temporal.getState().resume();
         },
         setViewport: (viewport: Viewport) => {
             set({ viewport });
@@ -802,9 +826,11 @@ export const useFlowStore = create<FlowStore>()(
             const currentNodes = get().nodes;
             const currentEdges = get().edges;
             const currentViewport = get().viewport;
+            useFlowStore.temporal.getState().pause(); // ours: a redraw, no undo step
             set({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 }, lastExecutionTime: 0 });
             queueMicrotask(() => {
                 set({ nodes: currentNodes, edges: currentEdges, viewport: currentViewport });
+                useFlowStore.temporal.getState().resume();
             });
         },
         toObject: () => {
@@ -814,7 +840,7 @@ export const useFlowStore = create<FlowStore>()(
                 viewport: get().viewport
             };
         }
-    }),
+    }), HISTORY),
     {
         name: "reactflow",
         storage: createJSONStorage(() => localStorage),
@@ -831,5 +857,25 @@ export const useFlowStore = create<FlowStore>()(
 // use, and the page reopened on that. Every tab follows the saved canvas instead: another tab's write is taken in here,
 // so what any tab writes back is the latest canvas, and a reload restores what was last on screen.
 window.addEventListener('storage', (event) => {
-    if (event.key === useFlowStore.persist.getOptions().name) useFlowStore.persist.rehydrate();
+    if (event.key !== useFlowStore.persist.getOptions().name) return;
+    const graph = JSON.stringify(graphOf(useFlowStore.getState()));
+    useFlowStore.persist.rehydrate();
+    // another tab's graph: this one's steps are of the graph it replaced (not when it only writes back run state)
+    if (JSON.stringify(graphOf(useFlowStore.getState())) !== graph) useFlowStore.temporal.getState().clear();
 });
+
+/** ours: an undo or redo (none while a node runs), keeping each node's live run state and results */
+export function undo(redo = false) {
+    const live = new Map(useFlowStore.getState().nodes.map(n => [n.id, n]));
+    const history = useFlowStore.temporal.getState();
+    if ([...live.values()].some(n => (n.data.progress ?? 0) !== 0)) return;
+    history.pause();
+    if (redo) history.redo(); else history.undo();
+    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => {
+        const was = live.get(n.id);
+        if (!was) return n;
+        const params = Object.fromEntries(Object.entries(n.data.params ?? {}).map(([k, p]) => [k, isResult(p) ? { ...p, value: was.data.params?.[k]?.value } : p]));
+        return { ...n, selected: was.selected, measured: was.measured, data: { ...n.data, ...Object.fromEntries(RUN_STATE.map(k => [k, was.data[k]])), params } };
+    }) }));
+    history.resume();
+}

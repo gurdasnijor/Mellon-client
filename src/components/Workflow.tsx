@@ -24,7 +24,7 @@ import { enqueueSnackbar } from 'notistack';
 
 import NodeSearchDialog from './NodeSearchDialog';
 import { NodeData, useNodesStore } from '../stores/useNodeStore';
-import { useFlowStore, CustomNodeType } from '../stores/useFlowStore';
+import { useFlowStore, CustomNodeType, undo } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 
 import CustomNode from './CustomNode';
@@ -518,7 +518,7 @@ function Workflow() {
       deciding.current = resolve;
       setAlertOpener({
         title: groups.length === 1 ? 'Delete this group?' : `Delete ${groups.length} groups?`,
-        message: `${names} and the ${members} node${members === 1 ? '' : 's'} in ${groups.length === 1 ? 'it' : 'them'} will be deleted. This can't be undone.`,
+        message: `${names} and the ${members} node${members === 1 ? '' : 's'} in ${groups.length === 1 ? 'it' : 'them'} will be deleted (Ctrl/⌘ Z brings them back).`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         onConfirm: () => resolve(true),
@@ -550,6 +550,11 @@ function Workflow() {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && !typing) {
         e.preventDefault();
         groupSelected();
+      }
+      // ours: undo and redo (Ctrl/⌘ Z, Shift Ctrl/⌘ Z); in a field, its own text's
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z' && !typing) {
+        e.preventDefault();
+        undo(e.shiftKey);
       }
     };
     window.addEventListener('keydown', onKey);

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { useReactFlow, type Edge, type FitViewOptions, type Viewport } from '@xyflow/react';
 import { enqueueSnackbar } from 'notistack';
 import config from '../../app.config';
@@ -63,8 +64,12 @@ export function useOpenGraph() {
   const edgeType = useSettingsStore(state => state.edgeType);
 
   const draw = useCallback((graph: { nodes: CustomNodeType[]; edges: Edge[] }, saved: [string | null, string | null, string | null]) => {
-    setNodes(unmeasured(unstored(graph.nodes)));
-    setEdges(graph.edges.map((e: Edge) => ({ ...e, type: edgeType })));
+    // drawn at once (React Flow queues these to its next render), so the undo history ends at the graph opened
+    flushSync(() => {
+      setNodes(unmeasured(unstored(graph.nodes)));
+      setEdges(graph.edges.map((e: Edge) => ({ ...e, type: edgeType })));
+    });
+    useFlowStore.temporal.getState().clear();
     useSavedGraphStore.getState().setSaved(...saved, work(graph.nodes, graph.edges));
     fitWhileSettling(fitView, getViewport);
   }, [setNodes, setEdges, fitView, getViewport, edgeType]);

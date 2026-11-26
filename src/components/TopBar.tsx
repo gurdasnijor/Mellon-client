@@ -90,6 +90,7 @@ function TopBar() {
   const handleNewClick = useCallback(async () => {
     if (!await replacing()) return; // ours: a canvas with edits asks first, as opening another graph does
     clearWorkflow();
+    useFlowStore.temporal.getState().clear(); // ours: no undo back into the graph before
     setViewport({ x: 0, y: 0, zoom: 1 });
     useSavedGraphStore.getState().setSaved(null, null);
   }, [clearWorkflow, setViewport]);
