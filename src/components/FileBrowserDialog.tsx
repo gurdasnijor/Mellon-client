@@ -347,7 +347,9 @@ function FileBrowserDialog({
         <Button
           onClick={() => {
             if (opener) {
-              setParam(opener.nodeId, opener.fieldKey, selectedFiles.map(file => file.path));
+              // ours: several files sorted, as the field keeps them (FileBrowserField's ordered)
+              const paths = selectedFiles.map(file => file.path);
+              setParam(opener.nodeId, opener.fieldKey, multiple ? paths.sort() : paths);
             }
             onSelect?.(selectedFiles.map(file => file.path));
             onClose();

@@ -38,6 +38,10 @@ export default function FileBrowserField(props: FieldProps) {
   const isImage = (file: string) => file.match(/\.(jpe?g|a?png|webp|gif|bmp|ico|tiff|svg)$/i);
   const isVideo = (file: string) => file.match(/\.(mp4|webm|ogg)$/i);
   const isUrl = (file: string) => file.startsWith('http://') || file.startsWith('https://');
+  // ours: a field of several files (Person's photos) holds them sorted (by sha256:<hex>/<name> for an upload), so a
+  // photo removed and added again is back where it was, and the node keys as before rather than re-running it and
+  // everything after it; a Library pick writes its entry's as they are, which give its key
+  const ordered = (files: string[]) => props.fieldOptions?.multiple ? [...files].sort() : files;
 
   // if none of the values is empty, add an empty string to allow adding more files
   const fieldValue = (props.fieldOptions?.multiple && allowImages && props.value && !props.value.includes('') ? [...props.value, ''] : props.value) || [''];
@@ -83,7 +87,7 @@ export default function FileBrowserField(props: FieldProps) {
     }
     if (newFiles.length === 0) return;
     props.updateStore(props.fieldKey, several ?
-      Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles])) :
+      ordered(Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles]))) :
       newFiles);
   }
 
@@ -114,7 +118,7 @@ export default function FileBrowserField(props: FieldProps) {
       newValues.push(value);
     }
     // ours: a single file's field emptied holds "", as the shipped graphs do, not [] (another key, and no text box)
-    const files = Array.from(new Set(newValues.filter(f => f)));
+    const files = ordered(Array.from(new Set(newValues.filter(f => f))));
     props.updateStore(props.fieldKey, files.length || props.fieldOptions?.multiple ? files : '');
   };
 
