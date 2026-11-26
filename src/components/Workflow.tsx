@@ -39,7 +39,6 @@ import ModelManagerDialog from './ModelManagerDialog';
 import AlertDialog from './AlertDialog';
 import SettingsDialog from './SettingsDialog';
 import LightboxDialog from './LightboxDialog';
-import { useSavedGraphStore } from '../stores/useSavedGraphStore';
 import { useOpenGraph } from '../utils/openGraph';
 
 const nodeTypes = {
@@ -467,7 +466,6 @@ function Workflow() {
       const reader = new FileReader();
       reader.onload = (e) => {
         show(JSON.parse(e.target?.result as string));
-        useSavedGraphStore.getState().setSaved(null, null);
       }
       reader.readAsText(file);
       return;

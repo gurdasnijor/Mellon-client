@@ -11,6 +11,8 @@ import config from "../../app.config";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import InputField from "./InputField";
 import IconButton from "@mui/material/IconButton";
+import { useFlowStore } from "../stores/useFlowStore";
+import { useStoredName } from "../utils/storedName";
 
 export default function FileBrowserField(props: FieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,7 +112,9 @@ export default function FileBrowserField(props: FieldProps) {
     } else {
       newValues.push(value);
     }
-    props.updateStore(props.fieldKey, Array.from(new Set(newValues.filter(f => f))));
+    // ours: a single file's field emptied holds "", as the shipped graphs do, not [] (another key, and no text box)
+    const files = Array.from(new Set(newValues.filter(f => f)));
+    props.updateStore(props.fieldKey, files.length || props.fieldOptions?.multiple ? files : '');
   };
 
   const getGridColumns = (count: number) => {
@@ -149,11 +153,13 @@ export default function FileBrowserField(props: FieldProps) {
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.5 }}>
           { isTextFieldEditable ? (
             fieldValue.map((file: string, index: number) => (
-              <InputField
+              <FileInput
                 key={index}
                 {...props}
                 value={file}
+                part={fieldValue.length > 1 ? index + 1 : undefined}
                 updateStore={(_, file) => updateArrayValues(file, index)}
+                clear={() => updateArrayValues('', index)}
               />
             ))
           ) : (
@@ -286,6 +292,23 @@ export default function FileBrowserField(props: FieldProps) {
           </Typography>
         )}
       </Box>
+    </Box>
+  );
+}
+
+// ours: a file named by its content (a Library pick's sha256:<hex>) shows its library entry's name (numbered among
+// several), not to be typed over: its X clears it, as deleting its text would
+function FileInput({ part, clear, ...props }: FieldProps & { part?: number; clear: () => void }) {
+  const folder: string | undefined = useFlowStore(s => s.nodes.find(n => n.id === props.nodeId)?.data.params.repo_id?.value);
+  const name = useStoredName(props.value, folder);
+  if (!name) return <InputField {...props} />;
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'background.default', px: 1, py: 0.5, borderRadius: 0.5 }} title={props.value}>
+      {props.label && <Typography sx={{ fontSize: 13, color: 'text.secondary', pr: 1, whiteSpace: 'nowrap' }}>{props.label}</Typography>}
+      <Typography sx={{ fontSize: 14, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{part ? `${name} · ${part}` : name}</Typography>
+      <IconButton size="small" className="nodrag" title="Clear" sx={{ p: 0 }} onClick={clear}>
+        <CloseIcon sx={{ fontSize: 16 }} />
+      </IconButton>
     </Box>
   );
 }

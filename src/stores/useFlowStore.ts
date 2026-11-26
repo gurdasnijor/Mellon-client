@@ -664,12 +664,15 @@ export const useFlowStore = create<FlowStore>()(
                         }
                     }
 
-                    // ours: nor a result's value, which no key reads and showing results would change (stored.ts)
+                    // ours: nor a result's value, which no key reads and showing results would change (stored.ts);
+                    // a seed the wand rolls each run is asked about as "random", which no run sends, so the node and
+                    // what follows it read as not stored, as the run will find them
+                    const rolled = typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value;
                     const param: APINodeExport['params'][string] = {
                         display: paramData.display,
                         value: check && String(paramData.display ?? '').startsWith('ui_') ? undefined
-                            : check && paramData.display === 'random' && typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value
-                            ? paramData.value.value
+                            : check && paramData.display === 'random' && rolled
+                            ? (paramData.value.isRandom ? 'random' : paramData.value.value)
                             : paramData.value,
                     };
                     if (paramData.spawn) {
