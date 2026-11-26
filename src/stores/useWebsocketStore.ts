@@ -6,6 +6,7 @@ import { useFlowStore } from './useFlowStore';
 import { NodeParams, useNodesStore } from './useNodeStore';
 import { useTaskStore } from './useTaskStore';
 import { useSettingsStore } from './useSettingsStore';
+import { attach, recheck } from './stored';
 import { runGraph } from '../utils/runGraph';
 import { enqueueSnackbar } from 'notistack';
 
@@ -143,7 +144,16 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                         console.info('Server instance changed, fetching nodes');
                     }
                     const cached = message.cachedNodes ?? [];
+                    recheck(cached); // ours: what the store holds (first: resetStatus puts back the nodes it found)
                     useFlowStore.getState().resetStatus(cached);
+                    // ours: a task running as the page opens or reconnects reports to it now: its badge, Stop and the
+                    // nodes it runs, as a page that posted it shows them
+                    useTaskStore.getState().fetchTasks().then(() => {
+                        const task = useTaskStore.getState().currentTask;
+                        if (!task) return;
+                        attach();
+                        (task.running ?? []).forEach(id => useFlowStore.getState().updateProgress(id, -1));
+                    });
                     break;
                 case 'executed':
                     if (!message.node) {
@@ -153,6 +163,10 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                     useFlowStore.getState().setNodeCached(message.node, true, message.hasChanged ? message.memoryUsage : undefined, message.hasChanged ? message.executionTime : undefined);
                     useFlowStore.getState().updateProgress(message.node, 0);
                     //console.info(`Node ${message.node}, ${message.name}, executed in ${message.executionTime?.last ?? 0}ms`);
+                    break;
+                case 'skipped': // ours: a node the run had nothing for, not cached and not running
+                    useFlowStore.getState().setNodeCached(message.node, false, undefined, undefined, true);
+                    useFlowStore.getState().updateProgress(message.node, 0);
                     break;
                 case 'graph_completed':
                     console.info('Graph completed in', message.executionTime, 'ms');
@@ -167,6 +181,20 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                         set({ loopTimer });
                     }
                     break;
+                case 'failed': { // ours: a node of the run failed, and why; the run goes on with the nodes that don't need it
+                    const failed = useFlowStore.getState().nodes.find(n => n.id === message.node);
+                    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => n.id === message.node ? { ...n, data: { ...n.data, failed: message.error, progress: 0 } } : n) }));
+                    const text = `${failed?.data.label || message.node} failed: ${message.error}`;
+                    enqueueSnackbar(text, { variant: 'error', autoHideDuration: Math.max(text.length * 80, 3000) });
+                    break;
+                }
+                case 'graph_stopped': { // ours: Stop ended the run after what was running; these nodes didn't run
+                    const nodes = useFlowStore.getState().nodes;
+                    const notRun: string[] = (message.not_run ?? []).map((id: string) => nodes.find(n => n.id === id)?.data.label || id);
+                    const text = `Stopped: ${notRun.length} ${notRun.length === 1 ? 'node' : 'nodes'} not run (${notRun.slice(0, 4).join(', ')}${notRun.length > 4 ? ', …' : ''})`;
+                    enqueueSnackbar(text, { variant: 'warning', autoHideDuration: Math.max(text.length * 80, 3000) });
+                    break;
+                }
                 case 'error':
                     console.error('Websocket error', message.error);
                     break;
@@ -189,11 +217,17 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => ({
                 case 'task_cancelled':
                 case 'task_started':
                 case 'task_completed':
+                case 'task_stopping': // ours: Stop was pressed
                     if (!message.queued && !message.current) {
                         console.error('Invalid task websocket message.');
                         return;
                     }
                     useTaskStore.getState().setTasks(message.current, message.queued);
+                    if (message.type === 'task_completed') { // ours: a run over leaves no node running, whichever page
+                        // posted it, and the store says what it stored (to a page that opened mid-run, its first nodes)
+                        useFlowStore.getState().nodes.forEach(n => { if (n.data.progress) useFlowStore.getState().updateProgress(n.id, 0); });
+                        recheck();
+                    }
 
                     if (message.type === 'task_completed' && message.sid === sid && message.args) {
                         //const values = Array.isArray(message.args) ? message.args[0]?.values ?? '' : '';

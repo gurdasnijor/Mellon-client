@@ -4,6 +4,8 @@ import { useReactFlow } from '@xyflow/react';
 import { useFlowStore } from '../stores/useFlowStore';
 import config from '../../app.config';
 import { runGraph } from '../utils/runGraph';
+import { useSavedGraphStore } from '../stores/useSavedGraphStore';
+import { replacing } from '../utils/openGraph';
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography';
@@ -29,6 +31,7 @@ import SignalWifi4BarIcon from '@mui/icons-material/SignalWifi4Bar';
 import SignalWifiOffIcon from '@mui/icons-material/SignalWifiOff';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import GetAppIcon from '@mui/icons-material/GetApp';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import StopIcon from '@mui/icons-material/Stop';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -60,6 +63,9 @@ function TopBar() {
   const clearWorkflow = useFlowStore(state => state.clearWorkflow);
   const toObject = useFlowStore(state => state.toObject);
   const exportGraph = useFlowStore(state => state.exportGraph);
+  // ours: once Stop is pressed, the task ends after the nodes running now, which it names
+  const stoppingAfter = useFlowStore(state => !currentTask?.stopping ? '' : (currentTask.running ?? [])
+    .map(id => state.nodes.find(n => n.id === id)?.data.label || id).join(', '));
 
   const handleExecuteMenuClick = () => {
     setExecuteButtonOpen(!executeButtonOpen);
@@ -84,10 +90,46 @@ function TopBar() {
     connect();
   }
 
-  const handleNewClick = useCallback(() => {
+  const handleNewClick = useCallback(async () => {
+    if (!await replacing()) return; // ours: a canvas with edits asks first, as opening another graph does
     clearWorkflow();
+    useFlowStore.temporal.getState().clear(); // ours: no undo back into the graph before
     setViewport({ x: 0, y: 0, zoom: 1 });
+    useSavedGraphStore.getState().setSaved(null, null);
   }, [clearWorkflow, setViewport]);
+
+  // ours: save the graph to the store as <workspace>/<name>; over the graph it was opened from only if that is
+  // unchanged since (If-Match), and under a new name only if none is saved there
+  const handleSaveClick = useCallback(async () => {
+    const { path, etag, setSaved } = useSavedGraphStore.getState();
+    const opened = path ? path.replace(/^store:graphs\//, '').replace(/\.json$/, '') : '';
+    const name = window.prompt('Save as <workspace>/<name>', opened)?.trim().replace(/\.json$/, '');
+    if (!name) {
+      return;
+    }
+    const target = `${name}.json`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (etag && path === `store:graphs/${target}`) {
+      headers['If-Match'] = etag;
+    }
+    try {
+      const response = await fetch(`${config.serverAddress}/graphs/${target.split('/').map(encodeURIComponent).join('/')}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(toObject()),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        enqueueSnackbar(data.error, { variant: 'error', autoHideDuration: data.error.length * 80 });
+        return;
+      }
+      setSaved(data.path, data.etag);
+      enqueueSnackbar(`Saved ${name}`, { variant: 'success' });
+    } catch (error) {
+      const err = `Error saving the graph: ${error}`;
+      enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
+    }
+  }, [toObject]);
 
   const handleExportClick = useCallback(() => {
     const graph = toObject();
@@ -187,6 +229,16 @@ function TopBar() {
         >
           New
         </Button>
+        {/* ours: Save */}
+        <Button
+          variant='text'
+          size='small'
+          startIcon={<SaveOutlinedIcon />}
+          sx={{ ml: 1 }}
+          onClick={handleSaveClick}
+        >
+          Save
+        </Button>
         <Button
           variant='text'
           size='small'
@@ -249,7 +301,7 @@ function TopBar() {
           title="Stop"
           variant="text"
           onClick={handleStopClick}
-          disabled={!isConnected || ((runningState === 'one_shot' && !taskCount) || (executeButtonIndex === 1 && runningState !== 'auto_queue'))}
+          disabled={!isConnected || !!currentTask?.stopping || ((runningState === 'one_shot' && !taskCount) || (executeButtonIndex === 1 && runningState !== 'auto_queue'))}
           sx={{
             minWidth: '0px',
             backgroundColor: `rgba(255, 255, 255, 0.05)`,
@@ -262,6 +314,8 @@ function TopBar() {
         >
           <StopIcon />
         </Button>
+        {currentTask?.stopping && <Typography data-key="stopping" variant="caption" sx={{ color: 'warning.main', whiteSpace: 'nowrap' }}>
+          {stoppingAfter ? `Stopping after ${stoppingAfter}` : 'Stopping'}</Typography>}
 
         <Box sx={{ position: 'relative', display: 'inline-flex' }}>
           <CircularProgress color="success" variant="determinate" value={currentTask?.progress ?? 0} size={38} thickness={4} sx={{ borderRadius: '50%', boxShadow: 'inset 0 0 0 4px rgba(255, 255, 255, 0.12)', '& .MuiCircularProgress-circle': { transition: '60ms' } }} />

@@ -29,8 +29,10 @@ export default function NumberField(props: FieldProps) {
             return value;
         }
         const newValue = isNaN(Number(value)) ? props.default : Number(value);
-        return Math.min(maxValue, Math.max(minValue, newValue)).toFixed(decimals)
+        return Number(Math.min(maxValue, Math.max(minValue, newValue)).toFixed(decimals)) // ours: posted as a number, not toFixed's string, which keyed "768" apart from 768
     }
+    const shown = formatValue(props.value); // ours: with its decimals
+
     const handleChevronClick = (direction: 'left' | 'right') => {
         if (!inputRef.current) return;
 
@@ -212,7 +214,7 @@ export default function NumberField(props: FieldProps) {
                 </Box>
                 <InputBase
                     inputRef={inputRef}
-                    value={formatValue(props.value)}
+                    value={typeof shown === 'number' ? shown.toFixed(decimals) : shown} // ours
                     onChange={(e) => props.updateStore(props.fieldKey, formatValue(e.target.value))}
                     size="small"
                     autoComplete="off"

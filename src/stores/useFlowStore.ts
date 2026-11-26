@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from "zustand/middleware";
+import { temporal, type ZundoOptions } from 'zundo'
 import { NodeData, NodeParams } from './useNodeStore'
 import { nanoid } from 'nanoid'
 import {
@@ -18,6 +19,7 @@ import {
 } from '@xyflow/react'
 
 import config from '../../app.config'
+import { defaultFace, fitFrame, GROUP_HEADER, GROUP_PAD, isResult, pastCard, pushRow } from '../components/groups'
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>
 export interface CustomConnection extends Connection {
@@ -49,12 +51,15 @@ export type FlowStore = {
     updateHandleConnectionStatus: () => void;
     updateSignalValues: (edges: Edge | Edge[]) => void;
     getSignalValue: (id: string, param: string) => any;
-    groupNodes: (ids: string[]) => void;
+    // ours: groups (groups.ts), skipped nodes, the store check's export
+    groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => string | null;
     ungroupNodes: (id: string) => void;
+    setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed' | 'outputNode' | 'pinned'>>) => void;
+    fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => void;
     setViewport: (viewport: Viewport) => void;
-    setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => void;
-    updateCacheStatus: (ids: string | string[]) => void;
-    exportGraph: (sid: string, targetNodeId?: string) => APIGraphExport;
+    setNodeCached: (id: string, cached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped?: boolean) => void;
+    updateCacheStatus: (ids: string | string[], skipped?: string[]) => void;
+    exportGraph: (sid: string, targetNodeId?: string | string[], check?: boolean) => APIGraphExport; // ours: or several, a folded card's ends
     updateProgress: (id: string, progress: number) => void;
     resetStatus: (cachedIds: string | string[]) => void;
     toObject: () => {
@@ -84,8 +89,28 @@ type APIGraphExport = {
     paths: string[][];
 }
 
+// ours: undo history of the graph a user edits, not of what a run or the store says about it: a node's run state and
+// results, selection and drawn size are left out (and an undo keeps the live ones: the store check answers for a node
+// whose key it moves). Edits less than half a second apart are one step (a drag, typing in a field)
+const RUN_STATE = ['isCached', 'skipped', 'failed', 'progress', 'memoryUsage', 'executionTime'] as const;
+const graphOf = (state: Pick<FlowStore, 'nodes' | 'edges'>) => ({
+    edges: state.edges.map(e => ({ ...e, selected: undefined })),
+    nodes: state.nodes.map(n => ({ ...n, selected: undefined, dragging: undefined, measured: undefined, data: {
+        ...Object.fromEntries(Object.entries(n.data).filter(([k]) => !(RUN_STATE as readonly string[]).includes(k))) as NodeData,
+        params: Object.fromEntries(Object.entries(n.data.params ?? {}).map(([k, p]) => [k, isResult(p) ? { ...p, value: undefined } : p])),
+    } })),
+});
+let lastEdit = 0;
+const HISTORY: ZundoOptions<FlowStore, ReturnType<typeof graphOf>> = {
+    partialize: graphOf,
+    equality: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    limit: 100,
+    // zundo types `save` as setState; it is its _handleSet, which takes all four
+    handleSet: save => (...args) => { if (Date.now() - lastEdit > 500) (save as (...a: typeof args) => void)(...args); lastEdit = Date.now(); },
+};
+
 export const useFlowStore = create<FlowStore>()(
-    persist((set, get) => ({
+    persist(temporal((set, get) => ({
         nodes: [],
         edges: [],
         viewport: {
@@ -448,85 +473,144 @@ export const useFlowStore = create<FlowStore>()(
                 return { edges: updatedEdges };
             });
         },
-        groupNodes: (ids: string[]) => {
-            set((state) => {
-                const nodes = state.nodes.filter(n => ids.includes(n.id));
-                if (nodes.length === 0) return state;
+        // ours: a group of nodes not in one (no groups in groups), framed around what they draw (`sizes`, from the
+        // canvas, since a node's preview can draw past its measured box), and its members back where they were when
+        // it's ungrouped. Grouping nodes all ungrouped from one group brings back its face (title, pins, input, output)
+        // rather than a new one's
+        groupNodes: (ids: string[], sizes?: Record<string, { width: number; height: number }>) => {
+            const nodes = get().nodes.filter(n => ids.includes(n.id) && n.data.type !== 'group' && !n.parentId);
+            if (nodes.length === 0) return null;
+            const size = (n: CustomNodeType) => sizes?.[n.id] ?? { width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 };
+            const pad = GROUP_PAD, header = GROUP_HEADER;
+            const was = new Set(nodes.map(n => JSON.stringify(n.data.ungrouped ?? null))).size === 1 ? nodes[0].data.ungrouped : undefined;
+            const members = new Set(nodes.map(n => n.id));
+            const face = defaultFace(nodes, get().edges);
 
-                const minX = Math.min(...nodes.map(n => n.position.x));
-                const minY = Math.min(...nodes.map(n => n.position.y));
-                const maxX = Math.max(...nodes.map(n => n.position.x + (n.measured?.width ?? 0)));
-                const maxY = Math.max(...nodes.map(n => n.position.y + (n.measured?.height ?? 0)));
+            const minX = Math.min(...nodes.map(n => n.position.x));
+            const minY = Math.min(...nodes.map(n => n.position.y));
+            const maxX = Math.max(...nodes.map(n => n.position.x + size(n).width));
+            const maxY = Math.max(...nodes.map(n => n.position.y + size(n).height));
 
-                const groupNode: CustomNodeType = {
-                    id: nanoid(),
+            const groupNode: CustomNodeType = {
+                id: nanoid(),
+                type: 'group',
+                width: maxX - minX + 2 * pad,
+                height: maxY - minY + 2 * pad + header,
+                data: {
                     type: 'group',
-                    width: maxX - minX + 40,
-                    height: maxY - minY + 40,
-                    data: {
-                        type: 'group',
-                        label: 'Group',
-                        category: 'group',
-                        module: '',
-                        action: '',
-                        params: {},
-                    },
-                    position: {
-                        x: minX - 20,
-                        y: minY - 20,
-                    },
-                };
-
-                const updatedNodes = state.nodes.map(n => {
-                    if (ids.includes(n.id)) {
-                        return {
-                            ...n,
-                            parentId: groupNode.id,
-                            position: {
-                                x: n.position.x - minX + 20,
-                                y: n.position.y - minY + 20,
-                            },
-                            extent: 'parent' as const
-                        };
+                    label: was?.label ?? 'Group',
+                    category: 'group',
+                    module: '',
+                    action: '',
+                    params: {},
+                    ...face,
+                    ...(was ? {
+                        inputNode: was.inputNode && members.has(was.inputNode) ? was.inputNode : face.inputNode,
+                        outputNode: was.outputNode && members.has(was.outputNode) ? was.outputNode : face.outputNode,
+                        pinned: (was.pinned ?? []).filter(p => members.has(p.node)),
+                        cardWidth: was.cardWidth,
+                        runs: was.runs?.map(r => r.to ? { ...r, to: r.to.filter(m => members.has(m)) } : r),
+                    } : {}),
+                },
+                position: {
+                    x: minX - pad,
+                    y: minY - pad - header,
+                },
+            };
+            set((state) => ({
+                nodes: [groupNode, ...state.nodes.map(n => members.has(n.id)
+                    ? {
+                        ...n,
+                        data: { ...n.data, ungrouped: undefined },
+                        parentId: groupNode.id,
+                        position: { x: n.position.x - groupNode.position.x, y: n.position.y - groupNode.position.y },
+                        extent: 'parent' as const,
                     }
-                    return n;
-                });
-
-                return { nodes: [groupNode, ...updatedNodes] };
-            });
+                    : n)],
+            }));
+            return groupNode.id;
         },
         ungroupNodes: (id: string) => {
             set((state) => {
-                const nodes = state.nodes.filter(n => n.id !== id);
-                return { nodes };
+                const group = state.nodes.find(n => n.id === id);
+                if (!group) return state;
+                // unfolded (only a frame has Ungroup), so its members are laid out where they draw
+                const { label, inputNode, outputNode, pinned, cardWidth: width, runs } = group.data;
+                return {
+                    nodes: state.nodes.filter(n => n.id !== id).map(n => {
+                        if (n.parentId !== id) return n;
+                        const member = {
+                            ...n,
+                            data: { ...n.data, ungrouped: { label, inputNode, outputNode, pinned, cardWidth: width, runs } },
+                            position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y },
+                        };
+                        delete member.parentId;
+                        delete member.extent;
+                        return member;
+                    }),
+                };
             });
+        },
+        setGroupData: (id: string, data: Partial<Pick<NodeData, 'label' | 'collapsed'>>) => {
+            const fold = 'collapsed' in data; // ours: folding shows the graph another way, no undo step
+            if (fold) useFlowStore.temporal.getState().pause();
+            set((state) => {
+                const group = state.nodes.find(n => n.id === id);
+                if (!group) return state;
+                // unfolding draws the frame where the card was: the row to its right moves along, and back on folding
+                const turned = fold && !!data.collapsed !== !!group.data.collapsed;
+                const dx = turned ? pastCard(group) * (data.collapsed ? -1 : 1) : 0;
+                return { nodes: pushRow(state.nodes, group, dx).map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n) };
+            });
+            if (fold) useFlowStore.temporal.getState().resume();
+        },
+        // an unfolded group's members laid out and its frame fitted to them as they draw (`sizes`), the row to its right
+        // (beside the frame as fitted: group.py's frames have no size) moving along by what the frame's width changed
+        fitGroup: (id: string, sizes: Record<string, { width: number; height: number }>) => {
+            useFlowStore.temporal.getState().pause(); // part of the unfold it follows, not a step of its own
+            set((state) => {
+                const group = state.nodes.find(n => n.id === id);
+                const members = state.nodes.filter(n => n.parentId === id && sizes[n.id]);
+                if (!group || group.data.collapsed || !members.length) return state;
+                const fit = fitFrame(members, sizes);
+                const { width, height } = fit;
+                const moved = members.some(m => fit.positions[m.id].x !== m.position.x || fit.positions[m.id].y !== m.position.y);
+                if (!moved && width === group.width && height === group.height) return state;
+                return {
+                    nodes: pushRow(state.nodes, { ...group, height }, pastCard({ ...group, width }) - pastCard(group)).map(n => n.id === id ? { ...n, width, height }
+                        : n.parentId === id && fit.positions[n.id] ? { ...n, position: fit.positions[n.id] } : n),
+                };
+            });
+            useFlowStore.temporal.getState().resume();
         },
         setViewport: (viewport: Viewport) => {
             set({ viewport });
         },
 
-        setNodeCached: (id: string, isCached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>) => {
+        setNodeCached: (id: string, isCached: boolean, memoryUsage?: Record<string, number>, executionTime?: Record<string, number>, skipped = false) => {
             set((state) => {
                 const node = state.nodes.find(n => n.id === id);
                 if (!node) return state;
                 return {
-                    nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isCached, memoryUsage: !isCached ? undefined : memoryUsage || n.data.memoryUsage || {}, executionTime: !isCached ? undefined : executionTime || n.data.executionTime || {} } } : n)
+                    nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isCached, skipped, memoryUsage: !isCached ? undefined : memoryUsage || n.data.memoryUsage || {}, executionTime: !isCached ? undefined : executionTime || n.data.executionTime || {} } } : n)
                 };
             });
         },
 
-        updateCacheStatus: (ids: string | string[]) => {
+        updateCacheStatus: (ids: string | string[], skipped?: string[]) => {
             const cached = Array.isArray(ids) ? ids : [ids]
             // set all nodes in `cached` to true and all others to false
             set((state) => {
                 return {
-                    nodes: state.nodes.map(n => cached.includes(n.id) ? { ...n, data: { ...n.data, isCached: true } } : { ...n, data: { ...n.data, isCached: false } })
+                    nodes: state.nodes.map(n => ({ ...n, data: { ...n.data, isCached: cached.includes(n.id), ...(skipped ? { skipped: skipped.includes(n.id) } : {}) } })) // ours: skipped, the store check's
                 };
             });
         },
 
-        exportGraph: (sid: string, targetNodeId?: string) => {
+        exportGraph: (sid: string, targetNodeId?: string | string[], check = false) => { // ours: check, for the store check (stored.ts); several targets, a folded card's ends
             const { nodes, edges } = get();
+            // ours: several targets, as a folded card's ▶ runs every member no other member reads
+            const targets = targetNodeId === undefined ? [] : [targetNodeId].flat();
             const sessionId = sid || '';
             
             // Filter out group nodes and nodes without module/action
@@ -545,11 +629,9 @@ export const useFlowStore = create<FlowStore>()(
             }
             
             // If targetNodeId is provided, validate it exists
-            let targetNode: CustomNodeType | undefined;
-            if (targetNodeId) {
-                targetNode = executableNodes.find(node => node.id === targetNodeId);
-                if (!targetNode) {
-                    throw new Error(`Target node with id ${targetNodeId} not found in executable nodes`);
+            for (const target of targets) {
+                if (!executableNodes.some(node => node.id === target)) {
+                    throw new Error(`Target node with id ${target} not found in executable nodes`);
                 }
             }
             
@@ -593,9 +675,9 @@ export const useFlowStore = create<FlowStore>()(
             // Determine which nodes to include in the export
             let nodesToInclude: string[] = [];
             
-            if (targetNodeId && targetNode) {
-                // For partial export: only include nodes needed for the target node
-                nodesToInclude = walkBackwards(targetNodeId);
+            if (targets.length) {
+                // For partial export: only include nodes needed for the targets
+                nodesToInclude = [...new Set(targets.flatMap(target => walkBackwards(target)))];
             } else {
                 // For full export: find output nodes and include all nodes in their paths
                 const outputNodes = executableNodes.filter(node => {
@@ -633,8 +715,9 @@ export const useFlowStore = create<FlowStore>()(
                         return;
                     }
 
-                    // handle special random field
-                    if (paramData.display === 'random') {
+                    // handle special random field (ours: not when only asking what is stored, stored.ts: nothing is
+                    // rolled or written back, and a seed is sent as it stands)
+                    if (paramData.display === 'random' && !check) {
                         const fieldValue = typeof paramData.value === 'object' && 'value' in paramData.value
                             ? paramData.value.value
                             : paramData.value;
@@ -649,9 +732,16 @@ export const useFlowStore = create<FlowStore>()(
                         }
                     }
 
+                    // ours: nor a result's value, which no key reads and showing results would change (stored.ts);
+                    // a seed the wand rolls each run is asked about as "random", which no run sends, so the node and
+                    // what follows it read as not stored, as the run will find them
+                    const rolled = typeof paramData.value === 'object' && paramData.value && 'value' in paramData.value;
                     const param: APINodeExport['params'][string] = {
                         display: paramData.display,
-                        value: paramData.value,
+                        value: check && String(paramData.display ?? '').startsWith('ui_') ? undefined
+                            : check && paramData.display === 'random' && rolled
+                            ? (paramData.value.isRandom ? 'random' : paramData.value.value)
+                            : paramData.value,
                     };
                     if (paramData.spawn) {
                         param.spawn = true;
@@ -684,11 +774,13 @@ export const useFlowStore = create<FlowStore>()(
             // Generate paths
             const paths: string[][] = [];
             
-            if (targetNodeId && targetNode) {
-                // For partial export: single path to the target node
-                const path = walkBackwards(targetNodeId);
-                if (path.length > 0) {
-                    paths.push(path);
+            if (targets.length) {
+                // For partial export: a path to each target node
+                for (const target of targets) {
+                    const path = walkBackwards(target);
+                    if (path.length > 0) {
+                        paths.push(path);
+                    }
                 }
             } else {
                 // For full export: paths from all output nodes
@@ -718,7 +810,8 @@ export const useFlowStore = create<FlowStore>()(
             set((state) => {
                 const node = state.nodes.find(n => n.id === id);
                 if (!node) return state;
-                return { nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, progress } } : n) };
+                // ours: a node running isn't skipped, whatever the last run did
+                return { nodes: state.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, progress, ...(progress ? { skipped: false } : {}) } } : n) };
             });
         },
         resetStatus: (cachedIds: string | string[]) => {
@@ -735,9 +828,11 @@ export const useFlowStore = create<FlowStore>()(
             const currentNodes = get().nodes;
             const currentEdges = get().edges;
             const currentViewport = get().viewport;
+            useFlowStore.temporal.getState().pause(); // ours: a redraw, no undo step
             set({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 }, lastExecutionTime: 0 });
             queueMicrotask(() => {
                 set({ nodes: currentNodes, edges: currentEdges, viewport: currentViewport });
+                useFlowStore.temporal.getState().resume();
             });
         },
         toObject: () => {
@@ -747,7 +842,7 @@ export const useFlowStore = create<FlowStore>()(
                 viewport: get().viewport
             };
         }
-    }),
+    }), HISTORY), // ours: undo
     {
         name: "reactflow",
         storage: createJSONStorage(() => localStorage),
@@ -758,3 +853,31 @@ export const useFlowStore = create<FlowStore>()(
         }),
     })
 )
+
+// ours: one canvas per page address. persist rewrites the saved canvas from whichever tab changes state last, a tab in
+// the background too (each one's welcome on a reconnect), so a tab holding an older graph put it back over the one in
+// use, and the page reopened on that. Every tab follows the saved canvas instead: another tab's write is taken in here,
+// so what any tab writes back is the latest canvas, and a reload restores what was last on screen.
+window.addEventListener('storage', (event) => {
+    if (event.key !== useFlowStore.persist.getOptions().name) return;
+    const graph = JSON.stringify(graphOf(useFlowStore.getState()));
+    useFlowStore.persist.rehydrate();
+    // another tab's graph: this one's steps are of the graph it replaced (not when it only writes back run state)
+    if (JSON.stringify(graphOf(useFlowStore.getState())) !== graph) useFlowStore.temporal.getState().clear();
+});
+
+/** ours: an undo or redo (none while a node runs), keeping each node's live run state and results */
+export function undo(redo = false) {
+    const live = new Map(useFlowStore.getState().nodes.map(n => [n.id, n]));
+    const history = useFlowStore.temporal.getState();
+    if ([...live.values()].some(n => (n.data.progress ?? 0) !== 0)) return;
+    history.pause();
+    if (redo) history.redo(); else history.undo();
+    useFlowStore.setState(s => ({ nodes: s.nodes.map(n => {
+        const was = live.get(n.id);
+        if (!was) return n;
+        const params = Object.fromEntries(Object.entries(n.data.params ?? {}).map(([k, p]) => [k, isResult(p) ? { ...p, value: was.data.params?.[k]?.value } : p]));
+        return { ...n, selected: was.selected, measured: was.measured, data: { ...n.data, ...Object.fromEntries(RUN_STATE.map(k => [k, was.data[k]])), params } };
+    }) }));
+    history.resume();
+}

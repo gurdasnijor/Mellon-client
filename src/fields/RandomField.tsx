@@ -4,6 +4,7 @@ import Stack from "@mui/material/Stack";
 
 import InputField from "./InputField";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 export default function RandomField(props: FieldProps) {
@@ -39,25 +40,33 @@ export default function RandomField(props: FieldProps) {
                     alignItems: 'center',
                 }}
             >
+                {/* ours: the wand's state reads in the field: on, Run rolls a new seed, so the node runs again */}
                 <InputField
                     {...props}
+                    label={isRandom ? `${props.label || 'Seed'} · new each run` : props.label}
                     value={fieldValue}
                     disabled={isRandom}
                     updateStore={handleFieldChange}
                 />
-                <IconButton
-                    size="small"
-                    className='nodrag'
-                    sx={{
-                        color: isRandom ? 'primary.main' : 'text.secondary',
-                        opacity: isRandom ? 1 : 0.5,
-                        width: 24,
-                        height: 24,
-                    }}
-                    onClick={randomToggle}
-                >
-                    <AutoFixHighIcon />
-                </IconButton>
+                <Tooltip arrow title={isRandom
+                    ? 'New seed each run: Run rolls one, so this node and what follows it run again. Click to keep this seed.'
+                    : 'Click for a new seed each run.'}>
+                    <IconButton
+                        size="small"
+                        className='nodrag'
+                        aria-label="New seed each run"
+                        aria-pressed={isRandom}
+                        sx={{
+                            color: isRandom ? 'primary.main' : 'text.secondary',
+                            opacity: isRandom ? 1 : 0.5,
+                            width: 24,
+                            height: 24,
+                        }}
+                        onClick={randomToggle}
+                    >
+                        <AutoFixHighIcon />
+                    </IconButton>
+                </Tooltip>
             </Stack>
         </Box>
     );

@@ -1,0 +1,164 @@
+import { memo, useEffect, useState } from 'react';
+import { Handle, NodeProps, Position, useUpdateNodeInternals } from '@xyflow/react';
+
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import InputBase from '@mui/material/InputBase';
+import Typography from '@mui/material/Typography';
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+
+import { useShallow } from 'zustand/react/shallow';
+
+import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { useTaskStore } from '../stores/useTaskStore';
+import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { runGraph } from '../utils/runGraph';
+import { drawnSize, GROUP_HEADER, groupPorts, groupStatus, isResult, results } from './groups';
+import NodeContent from './NodeContent';
+import ErrorBoundary from './ErrorBoundary';
+
+
+/**
+ * ours: a group of nodes. Unfolded, a frame with a header over its members; folded, a card with the same header and a
+ * port for every wire crossing the frame (wired by unfolding: the ports take no new wires).
+ */
+const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
+  const folded = !!node.data.collapsed;
+  const setGroupData = useFlowStore(s => s.setGroupData);
+  const ungroupNodes = useFlowStore(s => s.ungroupNodes);
+  // as JSON, so the node draws again only when its ports or its members' state change
+  const status: ReturnType<typeof groupStatus> = JSON.parse(useFlowStore(s => JSON.stringify(groupStatus(node.id, s.nodes))));
+  const portsJson = useFlowStore(s => JSON.stringify(groupPorts(node.id, s.nodes, s.edges)));
+  const { ins, outs }: ReturnType<typeof groupPorts> = JSON.parse(portsJson);
+  const setParam = useFlowStore(s => s.setParam);
+  const members = useFlowStore(useShallow(s => s.nodes.filter(n => n.parentId === node.id)));
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(node.data.label);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const { sid, isConnected } = useWebsocketStore();
+
+  useEffect(() => updateNodeInternals(node.id), [node.id, folded, portsJson, updateNodeInternals]);
+  // unfolded, the frame fits what its members draw, once they have drawn and again as a preview loads and resizes one
+  const fitGroup = useFlowStore(s => s.fitGroup);
+  const drawn = useFlowStore(s => folded ? '' : JSON.stringify(s.nodes.filter(n => n.parentId === node.id).map(n => [n.id, n.measured])));
+  useEffect(() => {
+    if (!drawn) return;
+    const frame = requestAnimationFrame(() => fitGroup(node.id, Object.fromEntries(
+      (JSON.parse(drawn) as [string][]).flatMap(([id]) => { const size = drawnSize(id); return size ? [[id, size]] : []; }))));
+    return () => cancelAnimationFrame(frame);
+  }, [node.id, drawn, fitGroup]);
+
+  const rename = () => {
+    setEditing(false);
+    if (title.trim() && title !== node.data.label) setGroupData(node.id, { label: title.trim() });
+    else setTitle(node.data.label);
+  };
+  const running = status.running;
+  const failed = status.failed; // ours: the last run's, until the next
+  const stopping = useTaskStore(s => !!s.currentTask?.stopping);
+  const tone = running ? (stopping ? 'warning.main' : 'info.main') : failed ? 'error.main' : status.stored === status.count ? 'success.main' : 'text.secondary';
+
+  // the face: each member's pinned fields, in the order pinned, under the member's name; then the output node's result
+  const pinned = node.data.pinned ?? [];
+  const faces = members
+    .map(m => ({ m, fields: pinned.filter(p => p.node === m.id && m.data.params?.[p.field]).map(p => p.field) }))
+    .filter(f => f.fields.length)
+    .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
+  const output = members.find(m => m.id === node.data.outputNode);
+  // what the card's ▶ runs: every member no other member reads, so a card whose members branch (Depth and Decode, both
+  // reading Select) makes all of them, not only the one whose result it shows
+  const ends = useFlowStore(useShallow(s => {
+    const inside = new Set(members.map(m => m.id));
+    return members.filter(m => !s.edges.some(e => e.source === m.id && inside.has(e.target))).map(m => m.id);
+  }));
+  const endLabels = members.filter(m => ends.includes(m.id)).map(m => m.data.label).join(' and ');
+  const labels = (ids: string[]) => members.filter(m => ids.includes(m.id)).map(m => m.data.label).join(' and ');
+  const run = (to: string[]) => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, to); };
+  // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px.
+  // On a card a video is at most 480 px tall (a portrait clip drawn at the card's width is about 1,000), and text wraps
+  // rather than scrolling sideways. A card made wider for its result (Assemble's) shows it whole, at the card's width.
+  const whole = !!node.data.cardWidth;
+  const face = (m: CustomNodeType, only: string[], title: string, result = false) => (
+    <Box key={`${title}:${m.id}`} data-key="face" sx={{ px: 1, pb: 1, '& .MuiBox-root': { mb: 0.5 } }}>
+      <Typography sx={{ fontSize: '18px', color: 'warning.main', mb: 0.5 }}>{title}</Typography>
+      <ErrorBoundary module={m.data.module || ''} action={m.data.action || ''}>
+        <Box sx={{ zoom: 1.4, '& video': whole ? { width: '100%' } : { maxHeight: 480 / 1.4 }, '& pre': { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+          ...(result && !whole ? { maxHeight: 480 / 1.4, overflowY: 'auto' } : {}) }}>
+        <NodeContent nodeId={m.id} params={m.data.params} only={only} updateStore={(p, v, k) => setParam(m.id, p, v, k)}
+          module={m.data.module || ''} action={m.data.action || ''} />
+        </Box>
+      </ErrorBoundary>
+    </Box>
+  );
+
+  return (
+    <Box sx={{
+      width: '100%', height: folded ? 'auto' : '100%',
+      border: '2px solid', borderColor: node.selected ? 'primary.main' : 'rgba(255, 179, 0, 0.55)', borderRadius: 1,
+      backgroundColor: folded ? 'background.paper' : 'rgba(255, 179, 0, 0.04)',
+    }}>
+      <Box sx={{ height: GROUP_HEADER, display: 'flex', alignItems: 'center', gap: 1, px: 1, backgroundColor: 'rgba(255, 179, 0, 0.12)' }}>
+        <IconButton size="small" className="nodrag" title={folded ? 'Unfold' : 'Fold'} onClick={() => setGroupData(node.id, { collapsed: !folded })}>
+          {folded ? <ArrowRightIcon sx={{ fontSize: '36px' }} /> : <ArrowDropDownIcon sx={{ fontSize: '36px' }} />}
+        </IconButton>
+        {editing
+          ? <InputBase className="nodrag" autoFocus value={title} onChange={e => setTitle(e.target.value)} onBlur={rename}
+              onKeyDown={e => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setTitle(node.data.label); setEditing(false); } }}
+              sx={{ flexGrow: 1, fontSize: '32px' }} />
+          : <Typography sx={{ flexShrink: 0, maxWidth: '75%', fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              title="Double-click to rename" onDoubleClick={() => { setTitle(node.data.label); setEditing(true); }}>{node.data.label}</Typography>}
+        {/* the status gives way to the title, which keeps its width up to three quarters of the header */}
+        <Typography data-key="group-status" title={!running && failed ? `${failed.label} failed: ${failed.error}` : !running && status.skipped
+          ? `Skipped: nothing for it in the last run (a piece past the plan's). ${status.stored} of ${status.count} stored` : `${status.stored} of ${status.count} stored`} sx={{
+          flexShrink: 1, minWidth: 0, ml: 'auto', overflow: 'hidden', textOverflow: 'ellipsis',
+          fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid', borderColor: tone, color: tone, whiteSpace: 'nowrap' }}>
+          {running
+            ? `${stopping ? 'stopping after' : 'running'} · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
+            : failed ? `failed · ${failed.label}` : status.skipped ? 'skipped' : `${status.stored}/${status.count} stored`}
+        </Typography>
+        {/* Run to here for the card: runs its ends and what they read, as a node's header does for one node */}
+        {/* or the card's runs, each named (a piece's Prompt, up to what runs here, then Render) */}
+        {node.data.runs?.map(r => { const to = r.to ?? ends; return (
+          <Button key={r.label} className="nodrag" size="small" variant="outlined" startIcon={<PlayArrowIcon />} title={`${r.label}: run to ${labels(to)}`}
+            disabled={!isConnected || !!running || !to.length} onClick={() => run(to)} sx={{ flexShrink: 0, fontSize: '18px', py: 0 }}>{r.label}</Button>); })
+          ?? (node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${endLabels || 'the output'})`}
+          disabled={!isConnected || !!running} onClick={() => run(ends.length ? ends : [node.data.outputNode!])}>
+          <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>)}
+        {/* a frame's members ungroup where they draw; a card's aren't laid out until it unfolds */}
+        {!folded && <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>}
+      </Box>
+      {folded && (
+        <Box sx={{ py: 1 }}>
+          {failed && !running && <Typography data-key="group-failed" sx={{ px: 1.5, pb: 1, fontSize: '20px', color: 'error.main', overflowWrap: 'anywhere' }}>
+            {failed.label} failed: {failed.error}</Typography>}
+          {ins.map(p => (
+            <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25 }}>
+              <Handle type="target" position={Position.Left} id={p.id} isConnectable={false} />
+              <Typography sx={{ fontSize: '20px' }}>{p.label}</Typography>
+            </Box>
+          ))}
+          {(faces.length > 0 || output) && (
+            <Box className="nodrag nowheel" sx={{ my: 1, pt: 1, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider' }}>
+              {faces.map(({ m, fields }) => face(m, fields, m.data.label, fields.every(f => isResult(m.data.params[f]))))}
+              {output && results(output).length > 0 && face(output, results(output), `Result · ${output.data.label}`, true)}
+            </Box>
+          )}
+          {outs.map(p => (
+            <Box key={p.id} sx={{ position: 'relative', px: 1.5, py: 0.25, textAlign: 'right' }}>
+              <Handle type="source" position={Position.Right} id={p.id} isConnectable={false} />
+              <Typography sx={{ fontSize: '20px' }}>{p.label}</Typography>
+            </Box>
+          ))}
+          {!ins.length && !outs.length && <Typography sx={{ px: 1.5, fontSize: '20px', color: 'text.secondary' }}>No wires cross this group</Typography>}
+        </Box>
+      )}
+    </Box>
+  );
+});
+
+export default GroupNode;

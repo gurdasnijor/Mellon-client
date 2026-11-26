@@ -1,5 +1,5 @@
 import { NodeProps, useStore, useUpdateNodeInternals } from "@xyflow/react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomNodeType, useFlowStore } from "../stores/useFlowStore";
 import { NodeParams } from "../stores/useNodeStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
@@ -8,7 +8,8 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { deepEqual } from '../utils/deepEqual';
 import { formatExecutionTime } from '../utils/formatExecutionTime';
 import { formatMemory } from '../utils/formatMemory';
-import NodeContent from "./NodeContent";
+import NodeContent, { Pins } from "./NodeContent";
+import { pinnable, results } from "./groups";
 
 import Box from "@mui/material/Box";
 import Popover from "@mui/material/Popover";
@@ -21,11 +22,14 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import TimerIcon from '@mui/icons-material/Timer';
 import MemoryIcon from '@mui/icons-material/Memory';
 import CircleIcon from '@mui/icons-material/Circle';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import OutputIcon from '@mui/icons-material/Output';
 
 import ErrorBoundary from './ErrorBoundary';
 import config from "../../app.config";
 import { enqueueSnackbar } from 'notistack';
 import { runGraph } from "../utils/runGraph";
+import { recheck } from "../stores/stored";
 
 const MAX_NODE_WIDTH = 1280;
 const MAX_NODE_HEIGHT = 1280;
@@ -41,9 +45,31 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const [executionTimeAnchorEl, setExecutionTimeAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [memoryAnchorEl, setMemoryAnchorEl] = useState<HTMLButtonElement | null>(null);
   const runningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { sid } = useWebsocketStore();
+  const { sid, isConnected } = useWebsocketStore();
   const zoomLevel = useStore((store) => store.transform[2]);
   const updateNodeInternals = useUpdateNodeInternals();
+  // ours: the group this node is in, whose folded card shows the fields pinned here and one member's result
+  // (read from the store: memo below keeps this node from drawing again when only its parentId changes)
+  const group = useFlowStore((state) => {
+    const parentId = state.nodes.find(n => n.id === node.id)?.parentId;
+    return parentId ? state.nodes.find(n => n.id === parentId) : undefined;
+  });
+  const setGroupData = useFlowStore((state) => state.setGroupData);
+  const pinnableJson = JSON.stringify(group ? pinnable(node) : []);
+  const pins = useMemo<Pins | undefined>(() => {
+    if (!group) return undefined;
+    const all = group.data.pinned ?? [];
+    const pinned = all.filter(p => p.node === node.id).map(p => p.field);
+    return {
+      pinnable: JSON.parse(pinnableJson),
+      pinned,
+      toggle: (field: string) => setGroupData(group.id, {
+        pinned: pinned.includes(field) ? all.filter(p => p.node !== node.id || p.field !== field) : [...all, { node: node.id, field }],
+      }),
+    };
+  }, [group, node.id, pinnableJson, setGroupData]);
+  const isOutput = !!group && group.data.outputNode === node.id;
+  const hasResult = !!group && results(node).length > 0;
 
   const handleUpdateStore = useCallback((param: string, value: any, key?: keyof NodeParams) => {
     setParam(node.id, param, value, key);
@@ -63,6 +89,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     }
   }, [setParam, node.id, sid]);
 
+  // ours: run this node and the nodes it reads from, as Run does for the whole graph
+  const handleRunToHere = useCallback(() => {
+    if (!sid) return;
+    useSettingsStore.getState().setRunningState('one_shot');
+    runGraph(sid, node.id);
+  }, [sid, node.id]);
+
   const handleClearCache = useCallback(async () => {
     try {
       const response = await fetch(`${config.serverAddress}/cache`, { method: 'DELETE', body: JSON.stringify({ nodes: [node.id] }) });
@@ -70,6 +103,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             throw new Error('Failed to delete cache');
         }
         setNodeCached(node.id, false);
+        // ours: its results were URLs into that memory, so they go; the store is asked again, and the dot then says
+        // whether it holds the node, whose results it draws again if so
+        recheck(useFlowStore.getState().nodes.filter(n => n.id !== node.id).map(n => n.id));
         enqueueSnackbar('Cache cleared', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
         console.error('Failed to delete cache', error);
@@ -119,6 +155,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         justifyContent: "space-between",
         width: "100%",
         minWidth: 200,
+        opacity: node.data.skipped ? 0.5 : 1, // ours
         maxWidth: MAX_NODE_WIDTH,
         minHeight: "100%",
         maxHeight: MAX_NODE_HEIGHT,
@@ -151,6 +188,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {label}
         </Box>
         <Box className="nodrag">
+          {/* ours: show the result on the folded group, and Run to here */}
+          {hasResult && <IconButton size="small" title={isOutput ? "Shown on the folded group: click to hide" : "Show this node's result on the folded group"}
+            onClick={() => setGroupData(group!.id, { outputNode: isOutput ? undefined : node.id })}
+            sx={{ color: isOutput ? 'warning.main' : 'inherit' }}><OutputIcon sx={{ fontSize: '18px' }} /></IconButton>}
+          <IconButton size="small" title="Run to here" disabled={!isConnected} onClick={handleRunToHere}><PlayArrowIcon sx={{ fontSize: '18px' }} /></IconButton>
           <IconButton size="small" onClick={(e) => setHelpAnchorEl(e.currentTarget)}><HelpOutlineIcon sx={{ fontSize: '18px' }} /></IconButton>
           <Popover
             open={!!helpAnchorEl}
@@ -197,7 +239,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           },
       }}>
         <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} />
+          <NodeContent nodeId={node.id} params={node.data.params} updateStore={handleUpdateStore} module={node.data.module || ''} action={node.data.action || ''} pins={pins} /* ours */ />
         </ErrorBoundary>
       </Box>
 
@@ -235,7 +277,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             className="nodrag"
             sx={{ p: 0.5 }}
             disabled={!node.data.isCached}
-            title={node.data.isCached ? 'Click to clear cache' : 'Not cached'}
+            // ours: skipped
+            title={node.data.skipped ? 'Skipped: nothing to do in this run' : node.data.isCached ? 'Click to clear cache' : 'Not cached'}
             onClick={handleClearCache}
           >
             <CircleIcon sx={{ fontSize: '14px', color: node.data.isCached ? 'success.main' : 'text.secondary.dark' }} />
@@ -377,7 +420,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   if (prev.data.memoryUsage?.last !== next.data.memoryUsage?.last) {
     return false;
   }
-  if (prev.data.isCached !== next.data.isCached) {
+  if (prev.data.isCached !== next.data.isCached || prev.data.skipped !== next.data.skipped) { // ours: skipped
     return false;
   }
   if (prev.data.progress !== next.data.progress) {

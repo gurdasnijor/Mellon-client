@@ -14,9 +14,20 @@ export type NodeData = {
     executionTime?: Record<string, number>;
     memoryUsage?: Record<string, number>;
     isCached?: boolean;
+    skipped?: boolean; // ours: the last run had nothing for it to do (the server's 'skipped')
+    failed?: string; // ours: why the node failed in the last run (the server's 'failed'), until the next run
     progress?: number;
     minimized?: boolean;
     headerColor?: string;
+    collapsed?: boolean; // ours: a group folded to a card
+    inputNode?: string; // ours: the member whose editable fields a new group pins
+    outputNode?: string; // ours: the member whose result a folded group shows
+    pinned?: { node: string; field: string }[]; // ours: members' fields a folded group shows, editing them there
+    cardWidth?: number; // ours: a folded group's card width when not CARD_WIDTH, a card made for its result (Assemble's)
+    // ours: the runs in a group's header, each to its members `to`, or the card's ends with none (a piece's Prompt, Render)
+    runs?: { label: string; to?: string[] }[];
+    // ours: on a node ungrouped, the face of the group it was in, which grouping its members again restores
+    ungrouped?: Pick<NodeData, 'label' | 'inputNode' | 'outputNode' | 'pinned' | 'cardWidth' | 'runs'>;
 }
 
 export type NodeParams = {

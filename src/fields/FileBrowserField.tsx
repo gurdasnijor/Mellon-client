@@ -17,7 +17,8 @@ export default function FileBrowserField(props: FieldProps) {
   const setFileBrowserOpener = useSettingsStore(state => state.setFileBrowserOpener);
   const [isDropActive, setIsDropActive] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
-  const currentPath = props.value?.length > 0 
+  // ours: a link or a Library pick (sha256:…) is no folder to browse
+  const currentPath = props.value?.length > 0 && Array.isArray(props.value) && !/^(sha256:|[a-z]+:\/\/)/.test(props.value[0])
     ? props.value[0].split(/[/\\]/).slice(0, -1).join('/') 
     : '.';
 
@@ -35,13 +36,23 @@ export default function FileBrowserField(props: FieldProps) {
   const isImage = (file: string) => file.match(/\.(jpe?g|a?png|webp|gif|bmp|ico|tiff|svg)$/i);
   const isVideo = (file: string) => file.match(/\.(mp4|webm|ogg)$/i);
   const isUrl = (file: string) => file.startsWith('http://') || file.startsWith('https://');
+  // ours: a field of several files (Person's photos) holds them sorted (by sha256:<hex>/<name> for an upload), so a
+  // photo removed and added again is back where it was, and the node keys as before rather than re-running it and
+  // everything after it; a Library pick writes its entry's as they are, which give its key
+  const ordered = (files: string[]) => props.fieldOptions?.multiple ? [...files].sort() : files;
 
   // if none of the values is empty, add an empty string to allow adding more files
   const fieldValue = (props.fieldOptions?.multiple && allowImages && props.value && !props.value.includes('') ? [...props.value, ''] : props.value) || [''];
   const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
+  // ours: a stored file (sha256:<hex>/<name>) shows its own name, numbered only where another in the field has it
+  const ownName = (file: string) => file.split('/')[1];
+  const sameName = (file: string) => file.startsWith('sha256:') &&
+    fieldValue.filter((f: string) => f.startsWith('sha256:') && ownName(f) === ownName(file)).length > 1;
 
-  async function uploadFile(file: File) {
+  // The file's path on the server once uploaded; the field is updated once for all of a pick or a drop (addFiles), since
+  // props.value is the field's value from before them
+  async function uploadFile(file: File): Promise<string[]> {
     const formData = new FormData();
     formData.append('file', file);
     const fileType = file.type.startsWith('image/') ? 'images' : 'videos';
@@ -54,59 +65,44 @@ export default function FileBrowserField(props: FieldProps) {
       const data = await response.json();
 
       if (!data.error) {
-        const newFiles = Array.isArray(data.path) ? data.path : [data.path];
-        let updatedFiles;
-        if (fileType === 'videos') {
-          // Videos are always single
-          updatedFiles = newFiles;
-        } else {
-          updatedFiles = props.fieldOptions?.multiple ? 
-            Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles])) : 
-            newFiles;
-        }
-        props.updateStore(props.fieldKey, updatedFiles);
-      } else {
-        console.error(data.error);
+        return Array.isArray(data.path) ? data.path : [data.path];
       }
+      console.error(data.error);
     } catch (error) {
       console.error(error);
     }
+    return [];
+  }
+
+  // ours: every image of a pick or a drop, uploaded and then added at once, sorted, to the field's own if it takes
+  // several; else the first file, a video always alone (uploadFile returns its paths rather than setting the field)
+  async function addFiles(picked: File[]) {
+    const files = picked.filter(file =>
+      (allowImages && file.type.startsWith('image/')) ||
+      (allowVideos && file.type.startsWith('video/'))
+    );
+    if (files.length === 0) return;
+    const several = props.fieldOptions?.multiple && allowImages && !files[0].type.startsWith('video/');
+    const newFiles: string[] = [];
+    for (const file of several ? files.filter(f => f.type.startsWith('image/')) : files.slice(0, 1)) {
+      newFiles.push(...await uploadFile(file));
+    }
+    if (newFiles.length === 0) return;
+    props.updateStore(props.fieldKey, several ?
+      ordered(Array.from(new Set([...(props.value || []).filter((f: string) => f), ...newFiles]))) :
+      newFiles);
   }
 
   async function handleFileDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     setIsDropActive(false);
-    const files = [...e.dataTransfer.files].filter(file => 
-      (allowImages && file.type.startsWith('image/')) || 
-      (allowVideos && file.type.startsWith('video/'))
-    );
-    if (files.length > 0) {
-      if (files[0].type.startsWith('video/')) {
-        await uploadFile(files[0]);
-      } else {
-        // Handle multiple image uploads if enabled
-        if (props.fieldOptions?.multiple && allowImages) {
-          //const currentImages = props.value?.filter(isImage) || [];
-          const newImages = files.map(f => f);
-          for (const file of newImages) {
-            await uploadFile(file);
-          }
-        } else {
-          await uploadFile(files[0]);
-        }
-      }
-    }
+    await addFiles([...e.dataTransfer.files]);
   }
 
   async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if ((allowImages && file.type.startsWith('image/')) || (allowVideos && file.type.startsWith('video/'))) {
-        await uploadFile(file);
-      }
-    }
+    await addFiles([...(e.target.files || [])]);
+    e.target.value = '';  // so picking the same file again is a change
   }
 
   const handleMediaLoad = () => {
@@ -123,7 +119,9 @@ export default function FileBrowserField(props: FieldProps) {
     } else {
       newValues.push(value);
     }
-    props.updateStore(props.fieldKey, Array.from(new Set(newValues.filter(f => f))));
+    // ours: a single file's field emptied holds "", as the shipped graphs do, not [] (another key, and no text box)
+    const files = ordered(Array.from(new Set(newValues.filter(f => f))));
+    props.updateStore(props.fieldKey, files.length || props.fieldOptions?.multiple ? files : '');
   };
 
   const getGridColumns = (count: number) => {
@@ -162,11 +160,14 @@ export default function FileBrowserField(props: FieldProps) {
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.5 }}>
           { isTextFieldEditable ? (
             fieldValue.map((file: string, index: number) => (
-              <InputField
+              // ours: a stored file shows its name, with an X to clear it
+              <FileInput
                 key={index}
                 {...props}
                 value={file}
+                part={sameName(file) ? index + 1 : undefined}
                 updateStore={(_, file) => updateArrayValues(file, index)}
+                clear={() => updateArrayValues('', index)}
               />
             ))
           ) : (
@@ -299,6 +300,22 @@ export default function FileBrowserField(props: FieldProps) {
           </Typography>
         )}
       </Box>
+    </Box>
+  );
+}
+
+// ours: a file in the store (sha256:<hex>/<name>: an upload, or a file a Library pick wrote) shows its own name
+// (numbered where another has it), not to be typed over: its X clears it, as deleting its text would
+function FileInput({ part, clear, ...props }: FieldProps & { part?: number; clear: () => void }) {
+  const name = typeof props.value === 'string' && props.value.startsWith('sha256:') ? props.value.split('/')[1] : undefined;
+  if (!name) return <InputField {...props} />;
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'background.default', px: 1, py: 0.5, borderRadius: 0.5 }} title={props.value}>
+      {props.label && <Typography sx={{ fontSize: 13, color: 'text.secondary', pr: 1, whiteSpace: 'nowrap' }}>{props.label}</Typography>}
+      <Typography sx={{ fontSize: 14, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{part ? `${name} · ${part}` : name}</Typography>
+      <IconButton size="small" className="nodrag" title="Clear" sx={{ p: 0 }} onClick={clear}>
+        <CloseIcon sx={{ fontSize: 16 }} />
+      </IconButton>
     </Box>
   );
 }

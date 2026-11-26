@@ -12,31 +12,39 @@ import {
   Viewport,
   useUpdateNodeInternals,
   ConnectionLineType,
+  NodeToolbar,
+  Position,
+  Panel,
+  type OnBeforeDelete,
 } from '@xyflow/react'
 import { useShallow } from 'zustand/react/shallow'
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import { enqueueSnackbar } from 'notistack';
 
 import NodeSearchDialog from './NodeSearchDialog';
 import { NodeData, useNodesStore } from '../stores/useNodeStore';
-import { useFlowStore, CustomNodeType } from '../stores/useFlowStore';
+import { useFlowStore, CustomNodeType, undo } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 
 import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
+import GroupNode from './GroupNode';
+import { drawnSize, foldView } from './groups';
 
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import FileBrowserDialog from './FileBrowserDialog';
 import ModelManagerDialog from './ModelManagerDialog';
 import AlertDialog from './AlertDialog';
 import SettingsDialog from './SettingsDialog';
 import LightboxDialog from './LightboxDialog';
-import config from '../../app.config';
+import { useOpenGraph } from '../utils/openGraph';
 
 const nodeTypes = {
   custom: CustomNode,
-  any: AnyNode
+  any: AnyNode,
+  group: GroupNode, // ours
 };
 
 function Workflow() {
@@ -60,6 +68,7 @@ function Workflow() {
   const removeEdges = useFlowStore(state => state.removeEdges);
   const setParam = useFlowStore(state => state.setParam);
   const updateViewportStore = useFlowStore(state => state.setViewport);
+  const groupNodes = useFlowStore(state => state.groupNodes); // ours
   const updateNodeInternals = useUpdateNodeInternals();
 
   const {
@@ -76,7 +85,8 @@ function Workflow() {
     setLightboxOpener,
   } = useSettingsStore();
 
-  const { screenToFlowPosition, setNodes, setEdges, setViewport } = useReactFlow();
+  const { screenToFlowPosition } = useReactFlow();
+  const { open, show } = useOpenGraph(); // ours: opening a graph is openGraph.ts's
 
   const [anchorPosition, setAnchorPosition] = useState<{ top: number, left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -455,18 +465,7 @@ function Workflow() {
 
       const reader = new FileReader();
       reader.onload = (e) => {
-        const graph = JSON.parse(e.target?.result as string);
-        const { nodes, edges, viewport } = graph;
-
-        // override the edge type to the value of the edgeType store
-        const newEdges = edges.map((e: Edge) => ({
-          ...e,
-          type: edgeType
-        }));
-
-        setNodes(nodes);
-        setEdges(newEdges);
-        setViewport(viewport);
+        show(JSON.parse(e.target?.result as string)); // ours: openGraph.ts
       }
       reader.readAsText(file);
       return;
@@ -480,29 +479,7 @@ function Workflow() {
 
     // if data ends with .json, it's a graph file
     if (data.endsWith('.json')) {
-      const response = await fetch(`${config.serverAddress}/file?file=${encodeURIComponent(data)}&t=${Date.now()}`);
-      if (!response.ok) {
-        const err = `Error fetching graph file: ${response.statusText}`;
-        enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
-        return;
-      }
-
-      const graph = await response.json();
-      if (graph.error) {
-        const err = `Error fetching graph file: ${graph.error}`;
-        enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
-        return;
-      }
-
-      const { nodes, edges, viewport } = graph;
-      const newEdges = edges.map((e: Edge) => ({
-        ...e,
-        type: edgeType
-      }));
-
-      setNodes(nodes);
-      setEdges(newEdges);
-      setViewport(viewport);
+      open(data); // ours: openGraph.ts
       return;
     }
 
@@ -527,7 +504,27 @@ function Workflow() {
     }
 
     addNode(newNode);
-  }, [screenToFlowPosition, addNode, nodesRegistry, edgeType]);
+  }, [screenToFlowPosition, addNode, nodesRegistry, open, show]);
+
+  // ours: a key press removes a group's members with it, and nothing undoes it, so removing a group asks first; the
+  // dialog closed any way but Delete keeps everything. Removing plain nodes and wires doesn't ask, as upstream.
+  const deciding = useRef<((remove: boolean) => void) | null>(null);
+  const confirmDelete: OnBeforeDelete<CustomNodeType> = useCallback(async ({ nodes: removing }) => {
+    const groups = removing.filter(n => n.type === 'group');
+    if (!groups.length) return true;
+    const members = removing.filter(n => n.parentId && groups.some(g => g.id === n.parentId)).length;
+    const names = groups.map(g => `"${g.data.label || 'Group'}"`).join(', ');
+    return new Promise<boolean>(resolve => {
+      deciding.current = resolve;
+      setAlertOpener({
+        title: groups.length === 1 ? 'Delete this group?' : `Delete ${groups.length} groups?`,
+        message: `${names} and the ${members} node${members === 1 ? '' : 's'} in ${groups.length === 1 ? 'it' : 'them'} will be deleted (Ctrl/⌘ Z brings them back).`,
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        onConfirm: () => resolve(true),
+      });
+    });
+  }, [setAlertOpener]);
 
   const handleEdgeDoubleClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.preventDefault();
@@ -539,12 +536,37 @@ function Workflow() {
     updateViewportStore(viewport);
   }, [updateViewportStore]);
 
+  // ours: folded groups drawn as cards, and the selection grouped by the toolbar's button or Ctrl/⌘ G
+  const view = useMemo(() => foldView(nodes, edges), [nodes, edges]);
+  const groupable = nodes.filter(n => n.selected && n.data.type !== 'group' && !n.parentId).map(n => n.id);
+  const groupSelected = useCallback(() => {
+    const ids = useFlowStore.getState().nodes.filter(n => n.selected && n.data.type !== 'group' && !n.parentId).map(n => n.id);
+    if (ids.length < 2) return;
+    groupNodes(ids, Object.fromEntries(ids.map(id => [id, drawnSize(id) ?? { width: 0, height: 0 }])));
+  }, [groupNodes]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && !typing) {
+        e.preventDefault();
+        groupSelected();
+      }
+      // ours: undo and redo (Ctrl/⌘ Z, Shift Ctrl/⌘ Z); in a field, its own text's
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z' && !typing) {
+        e.preventDefault();
+        undo(e.shiftKey);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [groupSelected]);
+
   return (
     <Box sx={{ width: '100%', height: '100%' }}>
       <ReactFlow
         nodeTypes={nodeTypes}
-        nodes={nodes}
-        edges={edges}
+        nodes={view.nodes}
+        edges={view.edges}
         defaultViewport={defaultViewport}
         connectionLineType={edgeType as ConnectionLineType}
         nodeOrigin={[0, 0]}
@@ -552,6 +574,7 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
+        onBeforeDelete={confirmDelete} // ours: a group's deletion asks first
         proOptions={{ hideAttribution: true }}
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
@@ -570,6 +593,21 @@ function Workflow() {
         onViewportChange={handleViewportChange}
         className={`${isConnecting ? 'connecting' : ''} ${isConnectionValid !== null ? isConnectionValid ? 'valid-connection' : 'invalid-connection' : ''}`}
       >
+        <NodeToolbar nodeId={groupable} isVisible={groupable.length >= 2} position={Position.Top}>
+          <Button size="small" variant="contained" onClick={groupSelected} title="Group the selected nodes (Ctrl/⌘ G)">Group</Button>
+        </NodeToolbar>
+        {/* ours: a blank canvas says how to open a graph */}
+        {nodes.length === 0 && (
+          <Panel position="top-center" style={{ top: '35%' }}>
+            <Box sx={{ textAlign: 'center', color: 'text.secondary', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ fontSize: 18, color: 'text.primary' }}>No graph open</Box>
+              <Box>Click a graph in the graph list to open it, or drop a graph file here.</Box>
+              <Button variant="outlined" onClick={() => { const s = useSettingsStore.getState(); s.setLeftPanelTabIndex(2); s.setLeftPanelOpen(true); }}>
+                Show the graph list
+              </Button>
+            </Box>
+          </Panel>
+        )}
         <Background
           variant={BackgroundVariant.Dots}
           gap={16}
@@ -622,7 +660,8 @@ function Workflow() {
       {alertOpener && (
         <AlertDialog
           opener={alertOpener}
-          onClose={() => { setAlertOpener(null); }}
+          // ours: closed, the deletion asked about is not made
+          onClose={() => { deciding.current?.(false); deciding.current = null; setAlertOpener(null); }}
         />
       )}
     </Box>
