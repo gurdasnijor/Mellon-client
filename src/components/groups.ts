@@ -125,11 +125,14 @@ export function groupStatus(groupId: string, nodes: CustomNodeType[]) {
   const members = nodes.filter(n => n.parentId === groupId && n.data.module && n.data.action);
   const running = members.find(n => (n.data.progress ?? 0) !== 0);
   const failed = members.find(n => n.data.failed);
+  const skipped = members.filter(n => n.data.skipped).length; // ours: the last run's, a lane past the plan's pieces
   return {
     stored: members.filter(n => n.data.isCached).length,
     count: members.length,
     running: running ? { label: labelOf(running), progress: running.data.progress ?? 0 } : null,
     failed: failed ? { label: labelOf(failed), error: failed.data.failed ?? '' } : null, // ours: the last run's failure
+    // every member not stored was skipped by the last run: nothing for this group in it
+    skipped: skipped > 0 && members.every(n => n.data.isCached || n.data.skipped),
   };
 }
 

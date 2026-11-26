@@ -14,6 +14,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { runGraph } from '../utils/runGraph';
 import { drawnSize, GROUP_HEADER, groupPorts, groupStatus, results } from './groups';
@@ -58,7 +59,8 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
   };
   const running = status.running;
   const failed = status.failed; // ours: the last run's, until the next
-  const tone = running ? 'info.main' : failed ? 'error.main' : status.stored === status.count ? 'success.main' : 'text.secondary';
+  const stopping = useTaskStore(s => !!s.currentTask?.stopping);
+  const tone = running ? (stopping ? 'warning.main' : 'info.main') : failed ? 'error.main' : status.stored === status.count ? 'success.main' : 'text.secondary';
 
   // the face: each member's pinned fields, in the order pinned, under the member's name; then the output node's result
   const pinned = node.data.pinned ?? [];
@@ -101,12 +103,13 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
           : <Typography sx={{ flexShrink: 0, maxWidth: '75%', fontSize: '32px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               title="Double-click to rename" onDoubleClick={() => { setTitle(node.data.label); setEditing(true); }}>{node.data.label}</Typography>}
         {/* the status gives way to the title, which keeps its width up to three quarters of the header */}
-        <Typography data-key="group-status" title={!running && failed ? `${failed.label} failed: ${failed.error}` : `${status.stored} of ${status.count} stored`} sx={{
+        <Typography data-key="group-status" title={!running && failed ? `${failed.label} failed: ${failed.error}` : !running && status.skipped
+          ? `Skipped: nothing for it in the last run (a piece past the plan's). ${status.stored} of ${status.count} stored` : `${status.stored} of ${status.count} stored`} sx={{
           flexShrink: 1, minWidth: 0, ml: 'auto', overflow: 'hidden', textOverflow: 'ellipsis',
           fontSize: '18px', px: 1, py: 0.25, borderRadius: 1, border: '1px solid', borderColor: tone, color: tone, whiteSpace: 'nowrap' }}>
           {running
-            ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
-            : failed ? `failed · ${failed.label}` : `${status.stored}/${status.count} stored`}
+            ? `${stopping ? 'stopping after' : 'running'} · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
+            : failed ? `failed · ${failed.label}` : status.skipped ? 'skipped' : `${status.stored}/${status.count} stored`}
         </Typography>
         {/* a member's Run to here, for the group's output node: runs it and what it reads, as a node's header does */}
         {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${output?.data.label ?? 'the output'})`}
