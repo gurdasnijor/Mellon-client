@@ -67,6 +67,13 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
     .filter(f => f.fields.length)
     .sort((a, b) => pinned.findIndex(p => p.node === a.m.id) - pinned.findIndex(p => p.node === b.m.id));
   const output = members.find(m => m.id === node.data.outputNode);
+  // what the card's ▶ runs: every member no other member reads, so a card whose members branch (Depth and Decode, both
+  // reading Select) makes all of them, not only the one whose result it shows
+  const ends = useFlowStore(useShallow(s => {
+    const inside = new Set(members.map(m => m.id));
+    return members.filter(m => !s.edges.some(e => e.source === m.id && inside.has(e.target))).map(m => m.id);
+  }));
+  const endLabels = members.filter(m => ends.includes(m.id)).map(m => m.data.label).join(' and ');
   // the fields drawn 1.4 times a node's, to be read at the zoom a graph of cards fits; a result scrolls past 480 px.
   // On a card a video is at most 480 px tall (a portrait clip drawn at the card's width is about 1,000), and text wraps
   // rather than scrolling sideways. A card made wider for its result (Assemble's) shows it whole, at the card's width.
@@ -108,9 +115,9 @@ const GroupNode = memo((node: NodeProps<CustomNodeType>) => {
             ? `running · ${running.label}${running.progress > 0 ? ` ${Math.round(running.progress)}%` : ''}`
             : failed ? `failed · ${failed.label}` : `${status.stored}/${status.count} stored`}
         </Typography>
-        {/* a member's Run to here, for the group's output node: runs it and what it reads, as a node's header does */}
-        {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${output?.data.label ?? 'the output'})`}
-          disabled={!isConnected || !!running} onClick={() => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, node.data.outputNode); }}>
+        {/* Run to here for the card: runs its ends and what they read, as a node's header does for one node */}
+        {node.data.outputNode && <IconButton className="nodrag" title={`Run to here (to ${endLabels || 'the output'})`}
+          disabled={!isConnected || !!running} onClick={() => { if (!sid) return; useSettingsStore.getState().setRunningState('one_shot'); runGraph(sid, ends.length ? ends : node.data.outputNode); }}>
           <PlayArrowIcon sx={{ fontSize: '28px' }} /></IconButton>}
         <IconButton className="nodrag" title="Ungroup" onClick={() => ungroupNodes(node.id)}><LinkOffIcon sx={{ fontSize: '28px' }} /></IconButton>
       </Box>
